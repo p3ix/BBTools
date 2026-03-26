@@ -131,6 +131,9 @@ def _print_summary(
     interesting_count: int = 0,
     tech_count: int = 0,
     port_hosts: int = 0,
+    waf_count: int = 0,
+    nowaf_live: int = 0,
+    third_party_count: int = 0,
 ) -> None:
     total = len(all_entries)
     resolved = sum(1 for e in all_entries if e["resolved"])
@@ -143,6 +146,12 @@ def _print_summary(
     table.add_row("Unresolved", f"[red]{total - resolved}[/]")
     if live_count:
         table.add_row("Live HTTP hosts", f"[cyan]{live_count}[/]")
+    if waf_count:
+        table.add_row("Behind WAF", f"[dim]{waf_count}[/]")
+    if nowaf_live:
+        table.add_row("Live without WAF", f"[bold green]{nowaf_live}[/]")
+    if third_party_count:
+        table.add_row("Third-party (CDN/SaaS)", f"[dim]{third_party_count}[/]")
     if tech_count:
         table.add_row("Technologies detected", f"[magenta]{tech_count}[/]")
     if interesting_count:
@@ -163,6 +172,73 @@ def _print_summary(
             row = [domain] + [str(counts.get(s, 0)) for s in all_src_names]
             src_table.add_row(*row)
         console.print(src_table)
+
+
+def _print_action_items(
+    all_entries: list[dict],
+    all_takeover: list[TakeoverCandidate],
+    all_probe_results: list[ProbeResult],
+    all_interesting: list[InterestingHit],
+    all_port_results: list,
+) -> None:
+    """Print a prioritised 'Next Steps' panel to guide the hunter."""
+    items: list[tuple[int, str, str]] = []  # (priority, subdomain, reason)
+
+    # 1. Takeover candidates (highest priority)
+    for c in all_takeover:
+        items.append((100, c.subdomain, f"TAKEOVER -> {c.service} ({c.cname})"))
+
+    # Build lookup maps
+    probe_map = {p.subdomain: p for p in all_probe_results}
+    port_map = {}
+    for r in all_port_results:
+        extras = {p: s for p, s in r.open_ports.items() if p not in (80, 443)}
+        if extras:
+            port_map[r.host] = extras
+    entry_map = {e["subdomain"]: e for e in all_entries}
+
+    # 2. High-value tech without WAF
+    for pr in all_probe_results:
+        if pr.high_value_techs and not pr.waf:
+            tech_str = ", ".join(pr.high_value_techs)
+            score = 90
+            items.append((score, pr.subdomain, f"High-value tech (no WAF): {tech_str}"))
+
+    # 3. Interesting subdomains with extra ports, no WAF
+    interesting_set = {h.subdomain: h for h in all_interesting}
+    for sub, hit in interesting_set.items():
+        pr = probe_map.get(sub)
+        extras = port_map.get(sub, {})
+        is_waf = pr.waf if pr else False
+        if extras and not is_waf:
+            port_str = ", ".join(f"{p}/{s}" for p, s in sorted(extras.items()))
+            items.append((80, sub, f"Interesting + ports: {port_str} (score:{hit.score})"))
+
+    # 4. Direct origins with interesting tech (no third-party, no WAF)
+    for pr in all_probe_results:
+        if not pr.live_urls or pr.waf:
+            continue
+        entry = entry_map.get(pr.subdomain, {})
+        if entry.get("third_party"):
+            continue
+        if pr.technologies and pr.subdomain not in {i[1] for i in items}:
+            tech_names = [t["name"] for t in pr.technologies[:3]]
+            items.append((50, pr.subdomain, f"Direct origin: {', '.join(tech_names)}"))
+
+    if not items:
+        return
+
+    items.sort(key=lambda x: -x[0])
+    top = items[:10]
+
+    console.print("\n[bold]Next Steps (top targets to investigate):[/]")
+    for i, (_, sub, reason) in enumerate(top, 1):
+        if "TAKEOVER" in reason:
+            console.print(f"  [bold red]{i}. {sub}[/] -- {reason}")
+        elif "High-value" in reason:
+            console.print(f"  [bold yellow]{i}. {sub}[/] -- {reason}")
+        else:
+            console.print(f"  [cyan]{i}. {sub}[/] -- {reason}")
 
 
 # ---------------------------------------------------------------------------
@@ -354,9 +430,21 @@ async def _run_async(
     for p in all_probe_results:
         all_hv_techs.extend(p.high_value_techs)
 
+    waf_count = sum(1 for p in all_probe_results if p.waf) if all_probe_results else 0
+    nowaf_live = sum(1 for p in all_probe_results if p.live_urls and not p.waf) if all_probe_results else 0
+    third_party_count = sum(1 for e in all_entries if e.get("third_party")) if all_entries else 0
+
     _print_summary(
         all_entries, source_counts, len(all_takeover), live_count,
         len(all_interesting), tech_count, port_hosts,
+        waf_count=waf_count,
+        nowaf_live=nowaf_live,
+        third_party_count=third_party_count,
+    )
+
+    _print_action_items(
+        all_entries, all_takeover, all_probe_results,
+        all_interesting, all_port_results,
     )
     console.print(f"\n[dim]Completed in {elapsed:.1f}s[/]\n")
 
@@ -473,12 +561,15 @@ def doctor(
 
     console.print(table)
 
-    console.print("\n[bold]New v0.3 capabilities:[/]")
+    console.print("\n[bold]Capabilities:[/]")
     console.print("  [green]✓[/] Technology fingerprinting (auto)")
+    console.print("  [green]✓[/] WAF detection (auto)")
+    console.print("  [green]✓[/] Third-party / CDN detection (auto)")
     console.print("  [green]✓[/] Interesting target tagging (auto)")
     console.print("  [green]✓[/] Port scanning (--scan-ports)")
     console.print("  [green]✓[/] Recursive enumeration (--recursive)")
     console.print("  [green]✓[/] Webhook notifications (WEBHOOK_URL)")
+    console.print("  [green]✓[/] Offensive output (httpx_output.jsonl, nowaf_targets.txt, commands.txt)")
 
 
 @app.command()

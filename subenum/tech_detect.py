@@ -64,6 +64,27 @@ _HEADER_RULES: list[tuple[str, re.Pattern, str, str]] = [
     ("set-cookie", re.compile(r"laravel_session", re.I), "Laravel", "framework"),
     ("set-cookie", re.compile(r"wp-settings|wordpress", re.I), "WordPress", "cms"),
     ("set-cookie", re.compile(r"__cfduid|__cf_bm", re.I), "Cloudflare", "cdn"),
+    # --- WAF / Security ---
+    ("server", re.compile(r"Sucuri", re.I), "Sucuri WAF", "waf"),
+    ("server", re.compile(r"AkamaiGHost", re.I), "Akamai WAF", "waf"),
+    ("server", re.compile(r"StackPath", re.I), "StackPath WAF", "waf"),
+    ("server", re.compile(r"DDoS-Guard", re.I), "DDoS-Guard", "waf"),
+    ("server", re.compile(r"Barracuda", re.I), "Barracuda WAF", "waf"),
+    ("server", re.compile(r"FortiWeb", re.I), "FortiWeb WAF", "waf"),
+    ("server", re.compile(r"BIG-IP|BIGIP", re.I), "F5 BIG-IP", "waf"),
+    ("x-sucuri-id", re.compile(r".", re.I), "Sucuri WAF", "waf"),
+    ("x-sucuri-cache", re.compile(r".", re.I), "Sucuri WAF", "waf"),
+    ("x-iinfo", re.compile(r".", re.I), "Imperva WAF", "waf"),
+    ("x-cdn", re.compile(r"Imperva|Incapsula", re.I), "Imperva WAF", "waf"),
+    ("x-akamai-transformed", re.compile(r".", re.I), "Akamai WAF", "waf"),
+    ("akamai-origin-hop", re.compile(r".", re.I), "Akamai WAF", "waf"),
+    ("x-fastly-request-id", re.compile(r".", re.I), "Fastly", "cdn"),
+    ("x-amzn-waf-action", re.compile(r".", re.I), "AWS WAF", "waf"),
+    ("x-amzn-requestid", re.compile(r".", re.I), "AWS ALB", "cloud"),
+    ("set-cookie", re.compile(r"incap_ses_|visid_incap_", re.I), "Imperva WAF", "waf"),
+    ("set-cookie", re.compile(r"BIGipServer", re.I), "F5 BIG-IP", "waf"),
+    ("set-cookie", re.compile(r"barra_counter_session", re.I), "Barracuda WAF", "waf"),
+    ("set-cookie", re.compile(r"_citrix_ns_id", re.I), "Citrix ADC", "waf"),
 ]
 
 # Body-based detections: (pattern, tech_name, category)
@@ -167,3 +188,19 @@ HIGH_VALUE_TECHS = {
 def flag_high_value(techs: list[TechMatch]) -> list[str]:
     """Return names of detected technologies that are frequently vulnerable."""
     return [t.name for t in techs if t.name in HIGH_VALUE_TECHS]
+
+
+# ---------------------------------------------------------------------------
+# WAF detection
+# ---------------------------------------------------------------------------
+
+WAF_TECHS = {
+    "Cloudflare", "Sucuri WAF", "Akamai WAF", "Imperva WAF", "AWS WAF",
+    "F5 BIG-IP", "Barracuda WAF", "FortiWeb WAF", "DDoS-Guard",
+    "StackPath WAF", "Citrix ADC",
+}
+
+
+def flag_waf(techs: list[TechMatch]) -> list[str]:
+    """Return names of detected WAF/CDN-with-WAF technologies."""
+    return sorted({t.name for t in techs if t.name in WAF_TECHS})

@@ -4,9 +4,10 @@ Passive subdomain enumeration CLI for Bug Bounty reconnaissance.
 
 `subenum` reads a list of root domains, queries multiple passive sources in
 parallel, deduplicates the results, validates them via DNS, probes for live
-HTTP services, fingerprints technologies, detects potential CNAME takeovers,
-flags interesting high-value targets, scans open ports, and exports everything
-to structured output files ready for your Bug Bounty workflow.
+HTTP services, fingerprints technologies, detects WAFs, identifies third-party
+services, detects potential CNAME takeovers, flags interesting high-value
+targets, scans open ports, and exports everything to structured output files
+ready for your Bug Bounty workflow.
 
 ## Features
 
@@ -20,26 +21,40 @@ to structured output files ready for your Bug Bounty workflow.
 - Basic wildcard DNS detection to avoid false positives.
 - **HTTP/HTTPS probing** with status codes, page titles, server headers,
   cookies, body hash.
-- **Technology fingerprinting** — automatically detects 40+ technologies
+- **Technology fingerprinting** -- automatically detects 40+ technologies
   (WordPress, Jenkins, Jira, Grafana, Elasticsearch, etc.) from HTTP
   responses and flags high-value targets known to have frequent CVEs.
-- **Interesting subdomain tagger** — scores and tags subdomains matching
+- **WAF detection** -- identifies Cloudflare, Akamai, Imperva, AWS WAF,
+  Sucuri, F5 BIG-IP, Barracuda, Fastly, DDoS-Guard, and more. Outputs
+  `nowaf_targets.txt` with hosts that have no WAF (priority targets).
+- **Third-party / CDN detection** -- identifies subdomains pointing to
+  Shopify, GitHub Pages, Heroku, AWS CloudFront, Azure, Vercel, Netlify,
+  and 50+ other services via CNAME analysis. Outputs `direct_origins.txt`
+  with hosts that are not behind third-party infrastructure.
+- **Interesting subdomain tagger** -- scores and tags subdomains matching
   patterns associated with admin panels, staging environments, APIs, CI/CD,
   databases, internal tools and more. Priority-sorted output.
-- **Port scanning** — async scan of 35+ high-value ports (Redis, MongoDB,
+- **Port scanning** -- async scan of 35+ high-value ports (Redis, MongoDB,
   Kubernetes API, Elasticsearch, etc.) on resolved hosts.
 - **CNAME subdomain takeover detection** with 45+ service fingerprints.
 - **Permutation/mutation** wordlist to discover hidden subdomains.
-- **Recursive enumeration** — automatically re-enumerates discovered
+- **Recursive enumeration** -- automatically re-enumerates discovered
   sub-zones (e.g. `*.internal.example.com`) for deeper coverage.
 - **Diff mode** to compare against previous scans and spot new targets.
-- **Webhook notifications** — Discord, Slack or generic JSON webhooks for
+- **Webhook notifications** -- Discord, Slack or generic JSON webhooks for
   continuous monitoring workflows.
-- Tool-friendly outputs: txt, JSON, CSV, IPs list, Burp scope, live URLs,
-  Nuclei targets, interesting targets, technologies, port scan results.
+- **Offensive output** -- `httpx_output.jsonl` (compatible with nuclei,
+  katana, httpx), `nowaf_targets.txt`, `direct_origins.txt`, and
+  `commands.txt` with ready-to-run commands for gowitness, nuclei, ffuf,
+  katana and nmap.
+- **Next Steps summary** -- after each scan, shows the top 10 targets to
+  investigate first, prioritised by takeover risk, high-value tech
+  without WAF, interesting subdomains with open ports, and direct origins.
+- Tool-friendly outputs: txt, JSONL, JSON, CSV, IPs list, Burp scope,
+  live URLs, Nuclei targets, interesting targets, technologies, ports.
 - Structured JSON output with per-subdomain metadata.
 - Statistics per domain and per source.
-- Graceful degradation — missing API keys or binaries are skipped
+- Graceful degradation -- missing API keys or binaries are skipped
   automatically.
 
 ## Requirements
@@ -51,13 +66,9 @@ to structured output files ready for your Bug Bounty workflow.
 ## Installation
 
 ```bash
-# Clone or copy the project
-cd subenum-project
-
-# Create a virtualenv (recommended)
+git clone git@github.com:YOUR_USER/BBTools.git
+cd BBTools
 python -m venv .venv && source .venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
@@ -107,29 +118,17 @@ target.org
 ### Run enumeration
 
 ```bash
-# Full enumeration (all available sources + HTTP probing + tech detection)
+# Full enumeration (all available sources + HTTP probing + tech + WAF detection)
 python -m subenum.main run -i domains.txt
-
-# Only export resolved subdomains in JSON
-python -m subenum.main run -i domains.txt --only-resolved
-
-# Use specific sources only
-python -m subenum.main run -i domains.txt --sources crtsh,subfinder,alienvault
-
-# Enable permutation brute-forcing
-python -m subenum.main run -i domains.txt --permutate
-
-# Enable recursive sub-zone enumeration
-python -m subenum.main run -i domains.txt --recursive
-
-# Enable port scanning on resolved hosts
-python -m subenum.main run -i domains.txt --scan-ports
 
 # Full offensive recon (everything enabled)
 python -m subenum.main run -i domains.txt --permutate --recursive --scan-ports
 
 # Skip HTTP probing (faster, DNS-only)
 python -m subenum.main run -i domains.txt --skip-probe
+
+# Use specific sources only
+python -m subenum.main run -i domains.txt --sources crtsh,subfinder,alienvault
 
 # Compare against a previous scan
 python -m subenum.main run -i domains.txt --diff output/20260325_132129
@@ -150,12 +149,6 @@ python -m subenum.main diff output/20260325_132129 output/20260326_091500
 python -m subenum.main doctor
 ```
 
-### Print version
-
-```bash
-python -m subenum.main version
-```
-
 ## Output
 
 Results are saved to `output/<YYYYMMDD_HHMMSS>/` with the following files:
@@ -164,14 +157,18 @@ Results are saved to `output/<YYYYMMDD_HHMMSS>/` with the following files:
 |---|---|
 | `all_subdomains.txt` | All unique subdomains found (one per line) |
 | `resolved_subdomains.txt` | Only subdomains that resolved via DNS |
-| `live_hosts.txt` | Live HTTP/HTTPS URLs, ready for nuclei/ffuf/burp |
+| `live_hosts.txt` | Live HTTP/HTTPS URLs |
 | `nuclei_targets.txt` | One URL per subdomain (prefers HTTPS) for `nuclei -l` |
+| `nowaf_targets.txt` | Live hosts without WAF -- priority targets for manual testing |
+| `direct_origins.txt` | Live hosts not behind third-party CDN/SaaS -- origin servers |
+| `httpx_output.jsonl` | One JSON per line, compatible with httpx/nuclei/katana pipelines |
 | `interesting.txt` | Priority-scored interesting targets with tags |
 | `ips.txt` | Unique IPs for port scanning with nmap/masscan |
 | `scope.txt` | `*.domain` format for Burp Suite scope import |
 | `takeover_candidates.txt` | Potential CNAME takeover targets |
 | `technologies.json` | Detected technologies per subdomain |
 | `ports.json` | Open ports per host from port scanning |
+| `commands.txt` | Ready-to-run commands for gowitness, nuclei, ffuf, katana, nmap |
 | `subdomains.json` | Full metadata per subdomain (see below) |
 | `subdomains.csv` | Same data in CSV format for spreadsheets |
 | `stats.json` | Counts, technology summary, elapsed time |
@@ -190,14 +187,15 @@ Each entry in `subdomains.json` looks like:
   "a_records": ["93.184.216.34"],
   "aaaa_records": [],
   "cname_records": [],
+  "third_party": "",
   "http_status": 200,
   "https_status": 200,
   "http_title": "API Documentation",
   "http_server": "nginx/1.24",
-  "http_redirect": "",
   "http_content_length": 4523,
   "body_hash": "a1b2c3d4e5f67890",
   "cookies": ["session", "csrf_token"],
+  "waf": [],
   "technologies": [
     {"name": "Nginx", "version": "1.24", "category": "server"},
     {"name": "React", "version": "", "category": "frontend"}
@@ -208,16 +206,6 @@ Each entry in `subdomains.json` looks like:
   "interesting_tags": ["api"],
   "interesting_reason": "API endpoint",
   "open_ports": {"443": "HTTPS", "8080": "Alt HTTP", "9200": "Elasticsearch"}
-}
-```
-
-Entries flagged for takeover also include:
-
-```json
-{
-  "takeover_candidate": true,
-  "takeover_service": "AWS S3",
-  "takeover_cname": "bucket.s3.amazonaws.com."
 }
 ```
 
@@ -237,7 +225,7 @@ The `interesting.txt` file is sorted by priority score (1-10):
 
 Set `WEBHOOK_URL` in your `.env` file to receive scan summaries via Discord,
 Slack or any generic JSON webhook. Particularly useful combined with `--diff`
-for monitoring workflows — get alerted when new subdomains appear.
+for monitoring workflows -- get alerted when new subdomains appear.
 
 ## CLI flags
 
@@ -277,14 +265,15 @@ subenum/
   config.py          YAML + .env config loading
   sources.py         10 passive source implementations
   dns_utils.py       DNS resolution + wildcard detection
-  http_probe.py      HTTP/HTTPS probing + tech fingerprinting
-  tech_detect.py     Technology fingerprint rules (40+ techs)
+  http_probe.py      HTTP/HTTPS probing + tech + WAF detection
+  tech_detect.py     Technology + WAF fingerprint rules
+  scope_check.py     Third-party / CDN detection via CNAME
   interesting.py     Interesting subdomain tagger + scoring
   ports.py           Async port scanning (35+ ports)
   takeover.py        CNAME takeover detection
   permutations.py    Subdomain permutation generation
   notify.py          Webhook notifications (Discord/Slack)
-  exporters.py       File export (txt/json/csv/stats/diff)
+  exporters.py       File export (txt/jsonl/json/csv/stats/diff)
 ```
 
 ## Legal disclaimer
@@ -297,5 +286,5 @@ subenum/
   engagement agreement.
 - Passive reconnaissance still generates network traffic; respect rate limits
   and terms of service of all third-party APIs.
-- Port scanning is an active technique — ensure it is within scope.
+- Port scanning is an active technique -- ensure it is within scope.
 - The authors assume no liability for misuse of this tool.

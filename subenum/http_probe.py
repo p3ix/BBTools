@@ -17,7 +17,7 @@ import httpx
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, MofNCompleteColumn
 
-from subenum.tech_detect import detect_technologies, techs_to_dict, flag_high_value, TechMatch
+from subenum.tech_detect import detect_technologies, techs_to_dict, flag_high_value, flag_waf, TechMatch
 
 if TYPE_CHECKING:
     from subenum.config import Settings
@@ -41,6 +41,7 @@ class ProbeResult:
     response_headers: dict[str, str] = field(default_factory=dict)
     technologies: list[dict] = field(default_factory=list)
     high_value_techs: list[str] = field(default_factory=list)
+    waf: list[str] = field(default_factory=list)
     live_urls: list[str] = field(default_factory=list)
 
 
@@ -102,6 +103,7 @@ async def probe_subdomain(
     techs = detect_technologies(merged_hdrs, best_body, cookie_str)
     result.technologies = techs_to_dict(techs)
     result.high_value_techs = flag_high_value(techs)
+    result.waf = flag_waf(techs)
 
     if https_st is not None:
         result.live_urls.append(f"https://{sub}")
@@ -159,5 +161,10 @@ async def probe_batch(
     if all_hv:
         unique_hv = sorted(set(all_hv))
         console.print(f"[bold red]High-value targets: {', '.join(unique_hv)}[/]")
+
+    waf_count = sum(1 for r in results if r.waf)
+    nowaf_live = sum(1 for r in results if r.live_urls and not r.waf)
+    if waf_count:
+        console.print(f"[dim]WAF detected on {waf_count} hosts, {nowaf_live} live without WAF[/]")
 
     return results
