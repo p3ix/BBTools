@@ -1,0 +1,54 @@
+concurrency: 20
+
+dns:
+  timeout: 5
+  retries: 2
+  resolvers:
+    - "8.8.8.8"
+    - "1.1.1.1"
+    - "9.9.9.9"
+    - "208.67.222.222"
+
+sources:
+  crtsh:
+    enabled: true
+    timeout: 30
+  virustotal:
+    enabled: true
+    timeout: 15
+    rate_limit: 4
+  urlscan:
+    enabled: true
+    timeout: 15
+    rate_limit: 2
+  subfinder:
+    enabled: true
+    timeout: 120
+    path: subfinder
+  amass:
+    enabled: true
+    timeout: 300
+    path: amass
+  alienvault:
+    enabled: true
+    timeout: 20
+  hackertarget:
+    enabled: true
+    timeout: 15
+  wayback:
+    enabled: true
+    timeout: 30
+  rapiddns:
+    enabled: true
+    timeout: 20
+  anubis:
+    enabled: true
+    timeout: 15
+
+http_probe:
+  enabled: true
+  timeout: 10
+  concurrency: 30
+
+port_scan:
+  timeout: 3.0

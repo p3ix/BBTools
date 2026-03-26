@@ -1,0 +1,27 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+
+# Scan output
+output/
+
+# User target files
+domains.txt
+
+# IDE / tools
+.mypy_cache/
+.ruff_cache/
+.vscode/
+*.swp
+*.swo
