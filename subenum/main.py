@@ -4,6 +4,9 @@ Usage:
     python -m subenum.main run -i domains.txt
     python -m subenum.main run -i domains.txt --permutate --scan-ports
     python -m subenum.main run -i domains.txt --recursive --skip-probe
+    python -m subenum.main run -i domains.txt --bruteforce --wordlist /path/to/words.txt
+    python -m subenum.main run -i domains.txt --permutate --wordlist /path/to/words.txt
+    python -m subenum.main run -i domains.txt --resume output/20260514_123456
     python -m subenum.main run -i domains.txt --diff output/20260325_132129
     python -m subenum.main diff output/20260325_132129 output/20260326_091500
     python -m subenum.main doctor
@@ -16,6 +19,7 @@ import asyncio
 import re
 import shutil
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -24,6 +28,9 @@ from rich.console import Console
 from rich.table import Table
 
 from subenum import __version__
+from subenum.bruteforce import bruteforce_domain, load_wordlist
+from subenum.checkpoint import CheckpointManager
+from subenum.js_extract import run_js_extraction, write_js_output, JSHostResult
 from subenum.config import Settings, load_settings
 from subenum.dns_utils import detect_wildcard, resolve_batch, ResolveResult
 from subenum.exporters import build_entries, export_all, standalone_diff
@@ -256,6 +263,10 @@ def run(
     recursive: bool = typer.Option(False, "--recursive", help="Re-enumerate discovered sub-zones"),
     scan_ports: bool = typer.Option(False, "--scan-ports", help="Port scan resolved hosts"),
     diff: Optional[Path] = typer.Option(None, "--diff", help="Compare against a previous output directory"),
+    bruteforce: bool = typer.Option(False, "--bruteforce", help="DNS brute-force using --wordlist"),
+    wordlist: Optional[Path] = typer.Option(None, "--wordlist", help="Wordlist for --bruteforce and/or --permutate"),
+    resume: Optional[Path] = typer.Option(None, "--resume", help="Resume interrupted run from its output directory"),
+    js: bool = typer.Option(False, "--js", help="Extract endpoints, subdomains and secrets from JS assets"),
 ) -> None:
     """Enumerate subdomains for all domains in the input file."""
     _banner()
@@ -263,18 +274,41 @@ def run(
     domains = _read_domains(input_file)
     only_sources = [s.strip() for s in sources.split(",")] if sources else None
 
+    # Validate + load wordlist once here so errors surface before the run starts
+    words: list[str] = []
+    if wordlist:
+        if not wordlist.is_file():
+            console.print(f"[bold red]Wordlist not found: {wordlist}[/]")
+            raise typer.Exit(1)
+        words = load_wordlist(wordlist)
+        console.print(f"[dim]Wordlist: {len(words)} words loaded from {wordlist}[/]")
+
+    if bruteforce and not words:
+        console.print("[bold red]--bruteforce requires --wordlist[/]")
+        raise typer.Exit(1)
+
+    if js and skip_probe:
+        console.print("[bold red]--js requires HTTP probing; remove --skip-probe[/]")
+        raise typer.Exit(1)
+
     console.print(f"[bold]Targets:[/] {', '.join(domains)}")
     if only_sources:
         console.print(f"[bold]Sources:[/] {', '.join(only_sources)}")
     flags = []
     if permutate:
-        flags.append("permutate")
+        flags.append("permutate" + (f"+wordlist({len(words)}w)" if words else ""))
+    if bruteforce:
+        flags.append(f"bruteforce({len(words)}w)")
     if recursive:
         flags.append("recursive")
     if scan_ports:
         flags.append("scan-ports")
     if skip_probe:
         flags.append("skip-probe")
+    if js:
+        flags.append("js-extract")
+    if resume:
+        flags.append(f"resume={resume}")
     if diff:
         flags.append(f"diff={diff}")
     if flags:
@@ -285,6 +319,7 @@ def run(
         domains, cfg, only_sources, only_resolved,
         skip_probe, permutate, recursive, scan_ports,
         str(diff) if diff else None,
+        words, bruteforce, resume, js,
     ))
 
 
@@ -298,6 +333,10 @@ async def _run_async(
     recursive: bool,
     scan_ports: bool,
     diff_dir: str | None,
+    words: list[str],
+    do_bruteforce: bool,
+    resume_dir: Optional[Path],
+    do_js: bool,
 ) -> None:
     t0 = time.time()
     all_entries: list[dict] = []
@@ -307,8 +346,42 @@ async def _run_async(
     all_interesting: list[InterestingHit] = []
     all_port_results: list = []
 
+    # ------------------------------------------------------------------
+    # Set up run directory and checkpoint early so we can save state
+    # as each domain completes.
+    # ------------------------------------------------------------------
+    if resume_dir is not None:
+        if not resume_dir.is_dir():
+            console.print(f"[bold red]Resume directory not found: {resume_dir}[/]")
+            raise typer.Exit(1)
+        run_dir = resume_dir
+        console.print(f"[bold cyan]Resuming run in {run_dir}[/]")
+    else:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_dir = Path("output") / ts
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+    ckpt = CheckpointManager(run_dir / ".checkpoint.json")
+
+    # Words for permutations: cap at _MAX_PERM_WORDS so combinatorics stay
+    # reasonable; the full list is used unchanged for flat brute-force.
+    from subenum.permutations import _MAX_PERM_WORDS
+    perm_words: list[str] | None = words[:_MAX_PERM_WORDS] if words else None
+
     for domain in domains:
         console.rule(f"[bold]{domain}[/]")
+
+        # ------------------------------------------------------------------
+        # Fast-path: load completed domain from checkpoint
+        # ------------------------------------------------------------------
+        if ckpt.is_domain_done(domain):
+            console.print(f"[dim]{domain} — already complete, loading from checkpoint[/]")
+            saved = ckpt.get_domain(domain)
+            all_entries.extend(saved["entries"])
+            source_counts.update({domain: saved["source_counts"]})
+            all_takeover.extend(TakeoverCandidate(**c) for c in saved["takeover_candidates"])
+            all_interesting.extend(InterestingHit(**h) for h in saved["interesting_hits"])
+            continue
 
         # --- Gather from all sources ---
         raw_results = await gather_subdomains(domain, cfg, only_sources)
@@ -322,6 +395,7 @@ async def _run_async(
         )
 
         if not unified:
+            ckpt.save_domain(domain, [], {}, [], [])
             continue
 
         # --- Recursive enumeration: find sub-zones and re-enumerate ---
@@ -344,22 +418,18 @@ async def _run_async(
                             source_counts[domain][src] = source_counts[domain].get(src, 0) + len(subs & new_found)
 
         # --- Wildcard detection ---
-        wildcard_ips = await detect_wildcard(
-            domain, cfg.dns_resolvers, cfg.dns_timeout
-        )
+        wildcard_ips = await detect_wildcard(domain, cfg.dns_resolvers, cfg.dns_timeout)
         wcard_map = {domain: wildcard_ips} if wildcard_ips else {}
 
         # --- DNS resolution ---
         resolve_results = await resolve_batch(sorted(unified), cfg, wcard_map)
 
-        # --- Permutation (if enabled, skip on wildcard domains) ---
+        # --- Permutation (skip on wildcard domains) ---
         if permutate:
             if wildcard_ips:
-                console.print(
-                    "[yellow]Skipping permutations — wildcard DNS makes them unreliable[/]"
-                )
+                console.print("[yellow]Skipping permutations — wildcard DNS makes them unreliable[/]")
             else:
-                perm_candidates = generate_permutations(unified, domain)
+                perm_candidates = generate_permutations(unified, domain, extra_words=perm_words)
                 if perm_candidates:
                     valid_perms = {p for p in perm_candidates if _DOMAIN_RE.match(p)}
                     if valid_perms:
@@ -373,9 +443,22 @@ async def _run_async(
                                 cleaned_map.setdefault("permutation", set()).add(pr.subdomain)
                             source_counts[domain]["permutation"] = len(perm_found)
 
+        # --- DNS brute-force ---
+        if do_bruteforce:
+            if wildcard_ips:
+                console.print("[yellow]Skipping brute-force — wildcard DNS makes results unreliable[/]")
+            else:
+                known = {r.subdomain for r in resolve_results}
+                bf_results = await bruteforce_domain(domain, words, cfg, wildcard_ips, known)
+                if bf_results:
+                    console.print(f"[bold green]+{len(bf_results)} new subdomains from brute-force[/]")
+                    resolve_results.extend(bf_results)
+                    for r in bf_results:
+                        cleaned_map.setdefault("bruteforce", set()).add(r.subdomain)
+                    source_counts[domain]["bruteforce"] = len(bf_results)
+
         # --- Build entries ---
         entries = build_entries(resolve_results, cleaned_map, domain)
-        all_entries.extend(entries)
 
         # --- CNAME takeover check ---
         candidates = check_takeover(entries)
@@ -392,6 +475,12 @@ async def _run_async(
             if len(interesting) > 5:
                 console.print(f"  [dim]... and {len(interesting) - 5} more[/]")
 
+        # --- Checkpoint: persist this domain so a resume can skip it ---
+        ckpt.save_domain(
+            domain, entries, source_counts[domain], candidates, interesting
+        )
+        all_entries.extend(entries)
+
     elapsed = time.time() - t0
 
     if not all_entries:
@@ -400,11 +489,38 @@ async def _run_async(
 
     # --- HTTP probing (unless skipped) ---
     if not skip_probe:
-        resolved_subs = [e["subdomain"] for e in all_entries if e["resolved"]]
-        if resolved_subs:
-            all_probe_results = await probe_batch(resolved_subs, cfg)
-            live_count = sum(1 for p in all_probe_results if p.live_urls)
+        if ckpt.probe_done:
+            console.print("[dim]HTTP probe already done — loading from checkpoint[/]")
+            saved_probe = ckpt.load_probe()
+            if saved_probe:
+                all_probe_results = [ProbeResult(**p) for p in saved_probe]
+        else:
+            resolved_subs = [e["subdomain"] for e in all_entries if e["resolved"]]
+            if resolved_subs:
+                all_probe_results = await probe_batch(resolved_subs, cfg)
+                ckpt.save_probe(all_probe_results)
+
+        live_count = sum(1 for p in all_probe_results if p.live_urls)
+        if live_count:
             console.print(f"[bold cyan]{live_count}[/] live HTTP hosts detected")
+
+    # --- JS extraction (if enabled) ---
+    all_js_results: list[JSHostResult] = []
+    if do_js and all_probe_results:
+        root_domains = {e["root_domain"] for e in all_entries}
+        all_js_results = await run_js_extraction(all_probe_results, root_domains, cfg)
+        if all_js_results:
+            # Surface any new subdomains found in JS files into interesting hits
+            js_new_subs: set[str] = set()
+            for hr in all_js_results:
+                js_new_subs.update(hr.all_subdomains)
+            known_subs = {e["subdomain"] for e in all_entries}
+            discovered_in_js = js_new_subs - known_subs
+            if discovered_in_js:
+                console.print(
+                    f"[bold yellow]{len(discovered_in_js)} new subdomain ref(s) in JS "
+                    f"— check js_subdomains.txt[/]"
+                )
 
     # --- Port scanning (if enabled) ---
     if scan_ports:
@@ -413,15 +529,18 @@ async def _run_async(
             all_port_results = await port_scan_batch(resolved_subs, cfg)
 
     # --- Export everything ---
-    out_dir = export_all(
+    export_all(
         all_entries, source_counts, elapsed,
         only_resolved=only_resolved,
+        output_dir=run_dir,
         diff_dir=diff_dir,
         takeover_candidates=all_takeover,
         probe_results=all_probe_results if all_probe_results else None,
         interesting_hits=all_interesting if all_interesting else None,
         port_results=all_port_results if all_port_results else None,
     )
+    if all_js_results:
+        write_js_output(all_js_results, run_dir)
 
     live_count = sum(1 for p in all_probe_results if p.live_urls) if all_probe_results else 0
     tech_count = sum(1 for p in all_probe_results if p.technologies) if all_probe_results else 0
@@ -451,7 +570,7 @@ async def _run_async(
     # --- Diff info for notifications ---
     new_subs: list[str] | None = None
     if diff_dir:
-        diff_file = out_dir / "diff.json"
+        diff_file = run_dir / "diff.json"
         if diff_file.is_file():
             import json
             diff_data = json.loads(diff_file.read_text())

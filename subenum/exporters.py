@@ -1,8 +1,7 @@
-"""Export enumeration results to txt, json, csv, stats and diff files."""
+"""Export enumeration results to txt, json, stats and diff files."""
 
 from __future__ import annotations
 
-import csv
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -197,16 +196,24 @@ def export_all(
     elapsed: float,
     only_resolved: bool = False,
     output_base: str | Path = "output",
+    output_dir: Path | None = None,
     diff_dir: str | Path | None = None,
     takeover_candidates: list | None = None,
     probe_results: list | None = None,
     interesting_hits: list | None = None,
     port_results: list | None = None,
 ) -> Path:
-    """Write all output files and return the output directory path."""
+    """Write all output files and return the output directory path.
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = Path(output_base) / ts
+    If *output_dir* is given, files are written there directly (used by the
+    resume flow so results land in the same directory as the checkpoint).
+    Otherwise a new timestamped sub-directory under *output_base* is created.
+    """
+    if output_dir is not None:
+        out_dir = output_dir
+    else:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = Path(output_base) / ts
     out_dir.mkdir(parents=True, exist_ok=True)
 
     all_subs = sorted({e["subdomain"] for e in all_entries})
@@ -339,17 +346,6 @@ def export_all(
             lines.append(f"[{h.score:2d}] {h.subdomain}\t{tag_str}\t{h.reason}")
         (out_dir / "interesting.txt").write_text("\n".join(lines) + "\n")
 
-    # --- technologies.json ---
-    if probe_results:
-        tech_data: dict[str, list[dict]] = {}
-        for pr in probe_results:
-            if pr.technologies:
-                tech_data[pr.subdomain] = pr.technologies
-        if tech_data:
-            (out_dir / "technologies.json").write_text(
-                json.dumps(tech_data, indent=2, ensure_ascii=False) + "\n"
-            )
-
     # --- ports.json ---
     if port_results:
         port_data: dict[str, dict[str, str]] = {}
@@ -396,23 +392,9 @@ def export_all(
         if nowaf:
             (out_dir / "nowaf_targets.txt").write_text("\n".join(sorted(nowaf)) + "\n")
 
-    # --- direct_origins.txt (live hosts not behind third-party CDN/SaaS) ---
-    if probe_results:
-        direct: list[str] = []
-        for pr in probe_results:
-            if not pr.live_urls:
-                continue
-            entry_data = next((e for e in all_entries if e["subdomain"] == pr.subdomain), {})
-            if not entry_data.get("third_party"):
-                direct.append(pr.live_urls[0])
-        if direct:
-            (out_dir / "direct_origins.txt").write_text("\n".join(sorted(direct)) + "\n")
-
     # --- commands.txt (ready-to-run offensive commands) ---
-    _export_commands(out_dir)
-
-    # --- subdomains.csv ---
-    _export_csv(out_dir / "subdomains.csv", export_entries)
+    if probe_results and any(p.live_urls for p in probe_results):
+        _export_commands(out_dir)
 
     # --- diff.json (if comparing against previous run) ---
     if diff_dir:
@@ -425,10 +407,6 @@ def export_all(
     console.print(f"\n[bold green]Results saved to {out_dir}/[/]")
     return out_dir
 
-
-# ---------------------------------------------------------------------------
-# CSV export
-# ---------------------------------------------------------------------------
 
 def _export_commands(out_dir: Path) -> None:
     """Generate a commands.txt with ready-to-run offensive tool commands."""
@@ -460,33 +438,12 @@ def _export_commands(out_dir: Path) -> None:
         "",
         "# Feed httpx-compatible JSONL to other tools",
         f"# JSONL file: {d}/httpx_output.jsonl",
+        "",
+        "# JS analysis output (if --js was used)",
+        f"# Endpoints : {d}/js_endpoints.txt",
+        f"# Secrets   : {d}/js_secrets.txt   (masked; full values in js_findings.json)",
+        f"# New subs  : {d}/js_subdomains.txt",
     ]
     (out_dir / "commands.txt").write_text("\n".join(lines) + "\n")
 
 
-_CSV_FIELDS = [
-    "root_domain", "subdomain", "resolved",
-    "a_records", "aaaa_records", "cname_records", "sources",
-    "http_status", "https_status", "http_title", "http_server",
-    "body_hash", "cookies", "waf", "third_party",
-    "takeover_candidate", "takeover_service",
-    "interesting", "interesting_score", "interesting_tags",
-    "open_ports",
-]
-
-
-def _export_csv(path: Path, entries: list[dict[str, Any]]) -> None:
-    with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=_CSV_FIELDS, extrasaction="ignore")
-        writer.writeheader()
-        for e in entries:
-            row = dict(e)
-            for k in ("a_records", "aaaa_records", "cname_records", "sources",
-                       "cookies", "interesting_tags", "high_value_techs", "waf"):
-                if isinstance(row.get(k), list):
-                    row[k] = ";".join(str(v) for v in row[k])
-            if isinstance(row.get("open_ports"), dict):
-                row["open_ports"] = ";".join(f"{p}/{s}" for p, s in row["open_ports"].items())
-            if isinstance(row.get("technologies"), list):
-                row["technologies"] = ";".join(t.get("name", "") for t in row["technologies"])
-            writer.writerow(row)
