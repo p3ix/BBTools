@@ -1,61 +1,80 @@
 # subenum
 
-Passive subdomain enumeration CLI for Bug Bounty reconnaissance.
+Active and passive subdomain enumeration CLI for Bug Bounty reconnaissance.
 
 `subenum` reads a list of root domains, queries multiple passive sources in
-parallel, deduplicates the results, validates them via DNS, probes for live
-HTTP services, fingerprints technologies, detects WAFs, identifies third-party
-services, detects potential CNAME takeovers, flags interesting high-value
-targets, scans open ports, and exports everything to structured output files
-ready for your Bug Bounty workflow.
+parallel, brute-forces DNS with custom wordlists, generates smart permutations,
+validates results via DNS, probes for live HTTP services, fingerprints
+technologies, detects WAFs, identifies third-party services, detects potential
+CNAME takeovers, extracts endpoints and secrets from JavaScript files, and
+exports everything to structured output files ready for your Bug Bounty workflow.
+
+Designed to run unattended on a VPS with full resume support after connection drops.
+
+---
 
 ## Features
 
-- **10 passive sources**: crt.sh, VirusTotal, urlscan.io, AlienVault OTX,
-  HackerTarget, Wayback Machine, RapidDNS, Anubis DB, subfinder (external
-  binary) and amass (external binary).
-- **6 free sources** that need no API key (crt.sh, AlienVault, HackerTarget,
+### Discovery
+- **10 passive sources** — crt.sh, VirusTotal, urlscan.io, AlienVault OTX,
+  HackerTarget, Wayback Machine, RapidDNS, Anubis DB, subfinder and amass.
+- **6 free sources** that require no API key (crt.sh, AlienVault, HackerTarget,
   Wayback, RapidDNS, Anubis).
-- Parallel async execution for speed.
-- DNS validation (A / AAAA / CNAME) with configurable resolvers.
-- Basic wildcard DNS detection to avoid false positives.
-- **HTTP/HTTPS probing** with status codes, page titles, server headers,
-  cookies, body hash.
-- **Technology fingerprinting** -- automatically detects 40+ technologies
-  (WordPress, Jenkins, Jira, Grafana, Elasticsearch, etc.) from HTTP
-  responses and flags high-value targets known to have frequent CVEs.
-- **WAF detection** -- identifies Cloudflare, Akamai, Imperva, AWS WAF,
-  Sucuri, F5 BIG-IP, Barracuda, Fastly, DDoS-Guard, and more. Outputs
-  `nowaf_targets.txt` with hosts that have no WAF (priority targets).
-- **Third-party / CDN detection** -- identifies subdomains pointing to
-  Shopify, GitHub Pages, Heroku, AWS CloudFront, Azure, Vercel, Netlify,
-  and 50+ other services via CNAME analysis. Outputs `direct_origins.txt`
-  with hosts that are not behind third-party infrastructure.
-- **Interesting subdomain tagger** -- scores and tags subdomains matching
-  patterns associated with admin panels, staging environments, APIs, CI/CD,
-  databases, internal tools and more. Priority-sorted output.
-- **Port scanning** -- async scan of 35+ high-value ports (Redis, MongoDB,
-  Kubernetes API, Elasticsearch, etc.) on resolved hosts.
+- **DNS brute-force** (`--bruteforce --wordlist`) — resolves every word in a
+  custom wordlist as `word.domain`. Supports any txt wordlist with `#` comments.
+- **Permutation/mutation engine** (`--permutate`) — generates label combinations
+  from discovered subdomains. Accepts an external wordlist (`--wordlist`) to
+  expand coverage; caps at 2 000 words to avoid combinatorial explosion (full
+  wordlist is used for flat brute-force).
+- **Recursive enumeration** (`--recursive`) — automatically re-enumerates
+  discovered sub-zones (e.g. `*.internal.example.com`) for deeper coverage.
+- DNS validation (A / AAAA / CNAME) with configurable resolvers and wildcard
+  detection to eliminate false positives.
+- Parallel async execution throughout for maximum speed.
+
+### Analysis
+- **HTTP/HTTPS probing** — status codes, page titles, server headers, cookies,
+  body hash, live URL detection.
+- **Technology fingerprinting** — detects 40+ technologies (WordPress, Jenkins,
+  Jira, Grafana, Elasticsearch, etc.) and flags high-value targets with frequent CVEs.
+- **WAF detection** — identifies Cloudflare, Akamai, Imperva, AWS WAF, Sucuri,
+  F5 BIG-IP, Barracuda, Fastly, DDoS-Guard and more.
+- **Third-party / CDN detection** — identifies subdomains pointing to Shopify,
+  GitHub Pages, Heroku, CloudFront, Azure, Vercel, Netlify and 50+ other
+  services via CNAME analysis.
+- **Interesting subdomain tagger** — scores (1–10) and tags subdomains matching
+  patterns for admin panels, staging environments, APIs, CI/CD, databases,
+  internal tools and more.
+- **Port scanning** (`--scan-ports`) — async scan of 35+ high-value ports
+  (Redis, MongoDB, Kubernetes API, Elasticsearch, etc.) on resolved hosts.
 - **CNAME subdomain takeover detection** with 45+ service fingerprints.
-- **Permutation/mutation** wordlist to discover hidden subdomains.
-- **Recursive enumeration** -- automatically re-enumerates discovered
-  sub-zones (e.g. `*.internal.example.com`) for deeper coverage.
-- **Diff mode** to compare against previous scans and spot new targets.
-- **Webhook notifications** -- Discord, Slack or generic JSON webhooks for
+
+### JavaScript analysis
+- **JS extraction** (`--js`) — crawls live hosts, fetches all JavaScript files
+  and extracts:
+  - **Endpoints** — LinkFinder regex (battle-tested bug bounty pattern) plus 8
+    semantic patterns covering REST paths, GraphQL, S3 buckets, Firebase URLs
+    and more.
+  - **Secrets** — 20 families: AWS keys, GCP/Firebase tokens, Stripe/Slack/
+    Twilio/SendGrid keys, JWT tokens, private keys, generic high-entropy strings
+    and more. Filtered with Shannon entropy (≥ 3.3 bits/char) and placeholder
+    detection to minimize false positives.
+  - **Subdomains** — domain references inside JS bundles that passive sources miss.
+  - Handles minified/webpack bundles via **jsbeautifier** before applying regex,
+    dramatically improving coverage on modern SPAs.
+
+### Workflow
+- **Resume / checkpoint** (`--resume <output_dir>`) — persists per-domain
+  progress to `.checkpoint.json` after each domain completes. Resume a
+  VPS run after a connection drop without losing completed work.
+- **Diff mode** (`--diff`) — compare against a previous scan and surface new targets.
+- **Webhook notifications** — Discord, Slack or generic JSON webhooks for
   continuous monitoring workflows.
-- **Offensive output** -- `httpx_output.jsonl` (compatible with nuclei,
-  katana, httpx), `nowaf_targets.txt`, `direct_origins.txt`, and
-  `commands.txt` with ready-to-run commands for gowitness, nuclei, ffuf,
-  katana and nmap.
-- **Next Steps summary** -- after each scan, shows the top 10 targets to
-  investigate first, prioritised by takeover risk, high-value tech
-  without WAF, interesting subdomains with open ports, and direct origins.
-- Tool-friendly outputs: txt, JSONL, JSON, CSV, IPs list, Burp scope,
-  live URLs, Nuclei targets, interesting targets, technologies, ports.
-- Structured JSON output with per-subdomain metadata.
-- Statistics per domain and per source.
-- Graceful degradation -- missing API keys or binaries are skipped
-  automatically.
+- **Next Steps summary** — after each scan shows the top 10 targets to
+  investigate first, prioritised by takeover risk, high-value tech without WAF,
+  interesting subdomains with open ports and direct origins.
+
+---
 
 ## Requirements
 
@@ -88,8 +107,7 @@ URLSCAN_API_KEY=your_key_here
 WEBHOOK_URL=https://discord.com/api/webhooks/your/webhook
 ```
 
-Sources whose keys are missing will be skipped silently. The 6 free sources
-(crt.sh, AlienVault OTX, HackerTarget, Wayback, RapidDNS, Anubis) work
+Sources whose keys are missing are skipped silently. The 6 free sources work
 without any keys.
 
 ### YAML config (optional)
@@ -102,39 +120,81 @@ cp config.example.yaml config.yaml
 
 See `config.example.yaml` for all available options.
 
+---
+
 ## Usage
 
 ### Prepare an input file
 
-Create `domains.txt` with one root domain per line. Lines starting with `#`
-are treated as comments and blank lines are ignored.
-
 ```text
-# My targets
+# domains.txt
 example.com
 target.org
 ```
 
-### Run enumeration
+### Common invocations
 
 ```bash
-# Full enumeration (all available sources + HTTP probing + tech + WAF detection)
-python -m subenum.main run -i domains.txt
-
-# Full offensive recon (everything enabled)
-python -m subenum.main run -i domains.txt --permutate --recursive --scan-ports
-
-# Skip HTTP probing (faster, DNS-only)
+# Passive enumeration only (fast, no active requests)
 python -m subenum.main run -i domains.txt --skip-probe
 
-# Use specific sources only
-python -m subenum.main run -i domains.txt --sources crtsh,subfinder,alienvault
+# Full passive + probing + WAF/tech detection
+python -m subenum.main run -i domains.txt
+
+# Full recon with permutations and recursive enumeration
+python -m subenum.main run -i domains.txt --permutate --recursive
+
+# Add DNS brute-force with a custom wordlist
+python -m subenum.main run -i domains.txt \
+  --bruteforce --wordlist wordlists/combined.txt \
+  --permutate --recursive
+
+# Full offensive recon (everything enabled)
+python -m subenum.main run -i domains.txt \
+  --bruteforce --wordlist wordlists/combined.txt \
+  --permutate --recursive --scan-ports --js
 
 # Compare against a previous scan
 python -m subenum.main run -i domains.txt --diff output/20260325_132129
+```
 
-# With a custom config file
-python -m subenum.main run -i domains.txt --config config.yaml
+### Resume after a connection drop
+
+```bash
+# Initial run
+python -m subenum.main run -i domains.txt \
+  --bruteforce --wordlist wordlists/combined.txt \
+  --permutate --recursive --js
+
+# Connection dropped — resume from the same output directory
+python -m subenum.main run -i domains.txt \
+  --bruteforce --wordlist wordlists/combined.txt \
+  --permutate --recursive --js \
+  --resume output/20260514_103045
+```
+
+Completed domains are loaded from the checkpoint and skipped. Only the
+in-progress domain at the time of interruption is re-processed.
+
+### Run unattended on a VPS
+
+```bash
+nohup python -m subenum.main run -i domains.txt \
+  --bruteforce --wordlist wordlists/combined.txt \
+  --permutate --recursive --js \
+  > scan.log 2>&1 &
+
+# Monitor progress
+tail -f scan.log
+```
+
+Or with `screen` to keep the rich progress bars visible:
+
+```bash
+screen -S scan
+python -m subenum.main run -i domains.txt --bruteforce --wordlist wordlists/combined.txt --permutate --recursive --js
+# Ctrl+A, D  →  detach without killing the process
+screen -r scan   # reattach later
 ```
 
 ### Diff two previous scans
@@ -143,40 +203,43 @@ python -m subenum.main run -i domains.txt --config config.yaml
 python -m subenum.main diff output/20260325_132129 output/20260326_091500
 ```
 
-### Check tool/key availability
+### Check tool and key availability
 
 ```bash
 python -m subenum.main doctor
 ```
 
+---
+
 ## Output
 
-Results are saved to `output/<YYYYMMDD_HHMMSS>/` with the following files:
+Results are saved to `output/<YYYYMMDD_HHMMSS>/`. When `--resume` is used the
+same directory is reused.
 
 | File | Description |
 |---|---|
-| `all_subdomains.txt` | All unique subdomains found (one per line) |
+| `subdomains.json` | Full metadata per subdomain (DNS, HTTP, WAF, tech, ports, takeover, score) |
+| `all_subdomains.txt` | All unique subdomains found, one per line |
 | `resolved_subdomains.txt` | Only subdomains that resolved via DNS |
 | `live_hosts.txt` | Live HTTP/HTTPS URLs |
 | `nuclei_targets.txt` | One URL per subdomain (prefers HTTPS) for `nuclei -l` |
-| `nowaf_targets.txt` | Live hosts without WAF -- priority targets for manual testing |
-| `direct_origins.txt` | Live hosts not behind third-party CDN/SaaS -- origin servers |
-| `httpx_output.jsonl` | One JSON per line, compatible with httpx/nuclei/katana pipelines |
+| `nowaf_targets.txt` | Live hosts without WAF — priority targets for manual testing |
+| `httpx_output.jsonl` | One JSON per line, compatible with httpx / nuclei / katana pipelines |
 | `interesting.txt` | Priority-scored interesting targets with tags |
-| `ips.txt` | Unique IPs for port scanning with nmap/masscan |
+| `ips.txt` | Unique resolved IPs for nmap / masscan |
 | `scope.txt` | `*.domain` format for Burp Suite scope import |
 | `takeover_candidates.txt` | Potential CNAME takeover targets |
-| `technologies.json` | Detected technologies per subdomain |
 | `ports.json` | Open ports per host from port scanning |
+| `js_findings.json` | Full JS analysis: endpoints, secrets and subdomains per host |
+| `js_endpoints.txt` | All unique endpoints extracted from JS files |
+| `js_secrets.txt` | Secrets found in JS (values masked) |
+| `js_subdomains.txt` | Subdomains discovered inside JS bundles |
 | `commands.txt` | Ready-to-run commands for gowitness, nuclei, ffuf, katana, nmap |
-| `subdomains.json` | Full metadata per subdomain (see below) |
-| `subdomains.csv` | Same data in CSV format for spreadsheets |
 | `stats.json` | Counts, technology summary, elapsed time |
 | `diff.json` | Delta vs previous scan (if `--diff` was used) |
+| `.checkpoint.json` | Resume state (one entry per completed domain) |
 
-### JSON entry format
-
-Each entry in `subdomains.json` looks like:
+### subdomains.json entry format
 
 ```json
 {
@@ -205,41 +268,65 @@ Each entry in `subdomains.json` looks like:
   "interesting_score": 7,
   "interesting_tags": ["api"],
   "interesting_reason": "API endpoint",
-  "open_ports": {"443": "HTTPS", "8080": "Alt HTTP", "9200": "Elasticsearch"}
+  "open_ports": {"443": "HTTPS", "9200": "Elasticsearch"}
 }
 ```
 
-### Interesting targets format
+### interesting.txt format
 
-The `interesting.txt` file is sorted by priority score (1-10):
+Sorted by priority score (1–10):
 
 ```text
-[ 9] admin.example.com     admin     Admin panel
-[ 9] jenkins.example.com   cicd      Jenkins CI
-[ 8] staging.example.com   dev       Staging environment
-[ 8] grafana.example.com   monitoring  Grafana
-[ 7] api.example.com       api       API endpoint
+[ 9] admin.example.com      admin       Admin panel
+[ 9] jenkins.example.com    cicd        Jenkins CI
+[ 8] staging.example.com    dev         Staging environment
+[ 8] grafana.example.com    monitoring  Grafana
+[ 7] api.example.com        api         API endpoint
 ```
 
-### Webhook notifications
-
-Set `WEBHOOK_URL` in your `.env` file to receive scan summaries via Discord,
-Slack or any generic JSON webhook. Particularly useful combined with `--diff`
-for monitoring workflows -- get alerted when new subdomains appear.
+---
 
 ## CLI flags
 
 | Flag | Description |
 |---|---|
 | `-i`, `--input` | Path to domains file (required) |
-| `--sources` | Comma-separated source names |
+| `--sources` | Comma-separated source names to use |
 | `--config` | Path to config YAML |
 | `--only-resolved` | Export only resolved subdomains in JSON |
 | `--skip-probe` | Skip HTTP/HTTPS probing |
 | `--permutate` | Generate and resolve permutation candidates |
+| `--bruteforce` | DNS brute-force using a wordlist (requires `--wordlist`) |
+| `--wordlist` | Path to wordlist for brute-force and/or permutations |
 | `--recursive` | Re-enumerate discovered sub-zones |
-| `--scan-ports` | Port scan resolved hosts |
+| `--scan-ports` | Async port scan on resolved hosts |
+| `--js` | Fetch and analyse JavaScript files (requires probing) |
+| `--resume` | Resume from an existing output directory |
 | `--diff` | Compare against a previous output directory |
+
+---
+
+## Wordlists
+
+`wordlists/bb_personal.txt` — curated personal wordlist (~750 words) organized
+in 17 sections: Dev/Staging/QA, API & gateway, Auth & identity, Admin panels,
+CI/CD & DevOps, Monitoring, Data & databases, Storage, Internal tools, Mail,
+Security infrastructure, Cloud & containers, Payment, Mobile, Network services,
+Regional instances, and Legacy & forgotten assets.
+
+`wordlists/combined.txt` — `bb_personal.txt` merged with
+[SecLists subdomains-top1million-5000](https://github.com/danielmiessler/SecLists/blob/master/Discovery/DNS/subdomains-top1million-5000.txt),
+deduplicated. Recommended default for `--wordlist`.
+
+For deeper coverage, combine with:
+- [Assetnote best-dns-wordlist](https://wordlists.assetnote.io) — internet-wide scan data
+- [n0kovo_subdomains_medium](https://github.com/n0kovo/n0kovo_subdomains) — ~100k curated entries
+
+```bash
+sort -u wordlists/bb_personal.txt seclists_5000.txt n0kovo_medium.txt > wordlists/deep.txt
+```
+
+---
 
 ## Available sources
 
@@ -255,6 +342,8 @@ for monitoring workflows -- get alerted when new subdomains appear.
 | urlscan.io | API | `URLSCAN_API_KEY` |
 | subfinder | External binary | No (install binary) |
 | amass | External binary | No (install binary) |
+
+---
 
 ## Project structure
 
@@ -272,9 +361,18 @@ subenum/
   ports.py           Async port scanning (35+ ports)
   takeover.py        CNAME takeover detection
   permutations.py    Subdomain permutation generation
+  bruteforce.py      DNS brute-force with custom wordlists
+  checkpoint.py      Resume / checkpoint persistence
+  js_extract.py      JavaScript endpoint, secret and subdomain extraction
   notify.py          Webhook notifications (Discord/Slack)
-  exporters.py       File export (txt/jsonl/json/csv/stats/diff)
+  exporters.py       File export (txt/jsonl/json/stats/diff)
+
+wordlists/
+  bb_personal.txt    Curated personal wordlist (~750 words, 17 sections)
+  combined.txt       bb_personal + SecLists top-5000, deduplicated
 ```
+
+---
 
 ## Legal disclaimer
 
@@ -286,5 +384,5 @@ subenum/
   engagement agreement.
 - Passive reconnaissance still generates network traffic; respect rate limits
   and terms of service of all third-party APIs.
-- Port scanning is an active technique -- ensure it is within scope.
+- Port scanning and JS analysis are active techniques — ensure they are within scope.
 - The authors assume no liability for misuse of this tool.
