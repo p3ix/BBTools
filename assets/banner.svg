@@ -1,0 +1,194 @@
+<svg width="1200" height="300" viewBox="0 0 1200 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1200" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#080c14"/>
+      <stop offset="100%" stop-color="#0d1929"/>
+    </linearGradient>
+
+    <!-- Dot grid -->
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.8" fill="#ffffff0a"/>
+    </pattern>
+
+    <!-- Left accent bar gradient -->
+    <linearGradient id="accentBar" x1="0" y1="0" x2="0" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#00e5c3"/>
+      <stop offset="50%"  stop-color="#00aaff"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+
+    <!-- Title text gradient -->
+    <linearGradient id="titleGrad" x1="65" y1="0" x2="460" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#00e5c3"/>
+      <stop offset="100%" stop-color="#00aaff"/>
+    </linearGradient>
+
+    <!-- Right fade-out mask -->
+    <linearGradient id="rightFade" x1="1120" y1="0" x2="1200" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#0d1929" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#0d1929" stop-opacity="1"/>
+    </linearGradient>
+
+    <!-- Title glow filter -->
+    <filter id="titleGlow" x="-5%" y="-30%" width="110%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Node glow filter -->
+    <filter id="nodeGlow" x="-150%" y="-150%" width="400%" height="400%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Red glow for takeover node -->
+    <filter id="redGlow" x="-150%" y="-150%" width="400%" height="400%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- ── Background ── -->
+  <rect width="1200" height="300" fill="url(#bgGrad)"/>
+  <rect width="1200" height="300" fill="url(#dots)"/>
+
+  <!-- Ambient glow blob behind title -->
+  <ellipse cx="235" cy="140" rx="270" ry="115" fill="#00e5c306"/>
+
+  <!-- Left accent bar -->
+  <rect x="0" y="0" width="3" height="300" fill="url(#accentBar)"/>
+
+  <!-- Top / bottom edge lines -->
+  <line x1="0" y1="0.5"   x2="1200" y2="0.5"   stroke="#ffffff0e" stroke-width="1"/>
+  <line x1="0" y1="299.5" x2="1200" y2="299.5" stroke="#ffffff0e" stroke-width="1"/>
+
+  <!-- ── TITLE ── -->
+  <text
+    x="65" y="150"
+    font-family="Consolas,'Courier New',monospace"
+    font-size="80"
+    font-weight="700"
+    letter-spacing="-1"
+    fill="url(#titleGrad)"
+    filter="url(#titleGlow)"
+  >subenum</text>
+
+  <!-- Blinking cursor -->
+  <rect x="398" y="88" width="8" height="64" rx="1" fill="#00e5c3" opacity="0.85">
+    <animate attributeName="opacity" values="0.85;0;0.85" dur="1.2s" repeatCount="indefinite"/>
+  </rect>
+
+  <!-- ── BADGES ── -->
+  <rect x="65"  y="165" width="70" height="21" rx="5" fill="#00e5c312" stroke="#00e5c33a" stroke-width="1"/>
+  <text x="100" y="180" font-family="Consolas,'Courier New',monospace" font-size="11" fill="#00e5c3cc" text-anchor="middle">v0.5.0</text>
+
+  <rect x="143" y="165" width="88" height="21" rx="5" fill="#3776ab18" stroke="#3776ab45" stroke-width="1"/>
+  <text x="187" y="180" font-family="Consolas,'Courier New',monospace" font-size="11" fill="#3776abcc" text-anchor="middle">Python 3.12+</text>
+
+  <rect x="239" y="165" width="88" height="21" rx="5" fill="#f59e0b14" stroke="#f59e0b3a" stroke-width="1"/>
+  <text x="283" y="180" font-family="Consolas,'Courier New',monospace" font-size="11" fill="#f59e0bcc" text-anchor="middle">Bug Bounty</text>
+
+  <!-- ── TAGLINE ── -->
+  <text
+    x="65" y="210"
+    font-family="Consolas,'Courier New',monospace"
+    font-size="15"
+    fill="#6e7681"
+    letter-spacing="0.3"
+  >Active &amp; passive subdomain enumeration · Brute-force · JS extraction · Resume</text>
+
+  <!-- Separator line -->
+  <line x1="65" y1="228" x2="758" y2="228" stroke="#21262d" stroke-width="1"/>
+
+  <!-- ── FEATURE PILLS ── -->
+  <!-- 1 · DNS Brute-force -->
+  <rect x="65"  y="237" width="122" height="20" rx="10" fill="#00e5c30d" stroke="#00e5c32c" stroke-width="1"/>
+  <circle cx="79"  cy="247" r="3" fill="#00e5c3" opacity="0.9"/>
+  <text x="87"  y="251" font-family="Consolas,'Courier New',monospace" font-size="11" fill="#00e5c3bb">DNS Brute-force</text>
+
+  <!-- 2 · Permutations -->
+  <rect x="195" y="237" width="108" height="20" rx="10" fill="#00aaff0d" stroke="#00aaff2c" stroke-width="1"/>
+  <circle cx="209" cy="247" r="3" fill="#00aaff" opacity="0.9"/>
+  <text x="217" y="251" font-family="Consolas,'Courier New',monospace" font-size="11" fill="#00aaffbb">Permutations</text>
+
+  <!-- 3 · JS Extraction -->
+  <rect x="311" y="237" width="110" height="20" rx="10" fill="#a78bfa0d" stroke="#a78bfa2c" stroke-width="1"/>
+  <circle cx="325" cy="247" r="3" fill="#a78bfa" opacity="0.9"/>
+  <text x="333" y="251" font-family="Consolas,'Courier New',monospace" font-size="11" fill="#a78bfabb">JS Extraction</text>
+
+  <!-- 4 · WAF Detection -->
+  <rect x="429" y="237" width="110" height="20" rx="10" fill="#f59e0b0d" stroke="#f59e0b2c" stroke-width="1"/>
+  <circle cx="443" cy="247" r="3" fill="#f59e0b" opacity="0.9"/>
+  <text x="451" y="251" font-family="Consolas,'Courier New',monospace" font-size="11" fill="#f59e0bbb">WAF Detection</text>
+
+  <!-- 5 · Takeover -->
+  <rect x="547" y="237" width="78" height="20" rx="10" fill="#ef44440d" stroke="#ef44442c" stroke-width="1"/>
+  <circle cx="561" cy="247" r="3" fill="#ef4444" opacity="0.9"/>
+  <text x="569" y="251" font-family="Consolas,'Courier New',monospace" font-size="11" fill="#ef4444bb">Takeover</text>
+
+  <!-- 6 · Resume -->
+  <rect x="633" y="237" width="72" height="20" rx="10" fill="#10b9810d" stroke="#10b9812c" stroke-width="1"/>
+  <circle cx="647" cy="247" r="3" fill="#10b981" opacity="0.9"/>
+  <text x="655" y="251" font-family="Consolas,'Courier New',monospace" font-size="11" fill="#10b981bb">Resume</text>
+
+  <!-- ── NETWORK TREE (right panel) ── -->
+  <!-- Dashed vertical divider -->
+  <line x1="800" y1="22" x2="800" y2="278" stroke="#21262d" stroke-width="1" stroke-dasharray="4,6"/>
+
+  <!-- Branch lines from root to children -->
+  <line x1="832" y1="139" x2="930" y2="70"  stroke="#00e5c322" stroke-width="1.5"/>
+  <line x1="832" y1="143" x2="934" y2="108" stroke="#00aaff22" stroke-width="1.5"/>
+  <line x1="834" y1="145" x2="934" y2="145" stroke="#a78bfa22" stroke-width="1.5"/>
+  <line x1="832" y1="148" x2="934" y2="182" stroke="#00e5c322" stroke-width="1.5"/>
+  <line x1="832" y1="152" x2="930" y2="219" stroke="#00aaff22" stroke-width="1.5"/>
+
+  <!-- Grandchild lines -->
+  <line x1="938" y1="67"  x2="1068" y2="52"  stroke="#00aaff16" stroke-width="1"/>
+  <line x1="938" y1="72"  x2="1068" y2="80"  stroke="#00aaff16" stroke-width="1"/>
+  <line x1="942" y1="108" x2="1068" y2="108" stroke="#ef444418" stroke-width="1"/>
+
+  <!-- Root node with outer ring -->
+  <circle cx="826" cy="145" r="13" fill="none" stroke="#00e5c31e" stroke-width="1"/>
+  <circle cx="826" cy="145" r="7"  fill="#00e5c3" opacity="0.90" filter="url(#nodeGlow)"/>
+  <text x="843" y="142" font-family="Consolas,'Courier New',monospace" font-size="11.5" fill="#00e5c388" font-weight="600">target.com</text>
+
+  <!-- Child nodes -->
+  <circle cx="938" cy="70"  r="4.5" fill="#00aaff" opacity="0.85" filter="url(#nodeGlow)"/>
+  <circle cx="942" cy="108" r="4.5" fill="#00e5c3" opacity="0.85" filter="url(#nodeGlow)"/>
+  <circle cx="942" cy="145" r="4.5" fill="#a78bfa" opacity="0.85" filter="url(#nodeGlow)"/>
+  <circle cx="942" cy="182" r="4.5" fill="#00e5c3" opacity="0.85" filter="url(#nodeGlow)"/>
+  <circle cx="938" cy="219" r="4.5" fill="#00aaff" opacity="0.85" filter="url(#nodeGlow)"/>
+
+  <!-- Child labels -->
+  <text x="951" y="74"  font-family="Consolas,'Courier New',monospace" font-size="11" fill="#00aaffaa">api.target.com</text>
+  <text x="955" y="112" font-family="Consolas,'Courier New',monospace" font-size="11" fill="#00e5c3aa">admin.target.com</text>
+  <text x="955" y="149" font-family="Consolas,'Courier New',monospace" font-size="11" fill="#a78bfaaa">dev.target.com</text>
+  <text x="955" y="186" font-family="Consolas,'Courier New',monospace" font-size="11" fill="#00e5c3aa">staging.target.com</text>
+  <text x="951" y="223" font-family="Consolas,'Courier New',monospace" font-size="11" fill="#00aaffaa">jenkins.target.com</text>
+
+  <!-- Grandchild nodes -->
+  <circle cx="1068" cy="52"  r="3" fill="#00aaff" opacity="0.50"/>
+  <circle cx="1068" cy="80"  r="3" fill="#00aaff" opacity="0.50"/>
+  <circle cx="1068" cy="108" r="4" fill="#ef4444" opacity="0.85" filter="url(#redGlow)"/>
+
+  <!-- Grandchild labels (faded) -->
+  <text x="1078" y="56"  font-family="Consolas,'Courier New',monospace" font-size="9.5" fill="#00aaff50">v1.api.target.com</text>
+  <text x="1078" y="84"  font-family="Consolas,'Courier New',monospace" font-size="9.5" fill="#00aaff50">v2.api.target.com</text>
+
+  <!-- Takeover warning badge -->
+  <rect x="1079" y="101" width="74" height="14" rx="3" fill="#ef444412" stroke="#ef44442e" stroke-width="1"/>
+  <text x="1085" y="112" font-family="Consolas,'Courier New',monospace" font-size="9.5" fill="#ef4444cc">! takeover</text>
+
+  <!-- Right fade mask -->
+  <rect x="1120" y="0" width="80" height="300" fill="url(#rightFade)"/>
+</svg>

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.svg" alt="subenum banner" width="100%"/>
+</p>
+
 # subenum
 
 Active and passive subdomain enumeration CLI for Bug Bounty reconnaissance.
