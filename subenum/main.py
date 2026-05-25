@@ -35,7 +35,9 @@ from subenum.config import Settings, load_settings
 from subenum.dns_utils import detect_wildcard, resolve_batch, ResolveResult
 from subenum.exporters import build_entries, export_all, standalone_diff
 from subenum.http_probe import probe_batch, ProbeResult
-from subenum.interesting import tag_interesting, InterestingHit
+from subenum.headers_audit import audit_headers, print_headers_summary, export_headers_audit
+from subenum.shodan_enrich import enrich_with_shodan, export_shodan
+from subenum.interesting import tag_interesting, enrich_with_probe, InterestingHit
 from subenum.notify import notify_results
 from subenum.permutations import generate_permutations
 from subenum.ports import scan_batch as port_scan_batch
@@ -116,12 +118,12 @@ def _clean_subdomains(
                 continue
             if not _DOMAIN_RE.match(s):
                 continue
-            # Reject garbage: prefix must be max 4 labels deep, each ≤30 chars
+            # Reject garbage: prefix must be max 6 labels deep, each ≤40 chars
             prefix = s[: -len(suffix)]
             labels = prefix.split(".")
-            if len(labels) > 4:
+            if len(labels) > 6:
                 continue
-            if any(len(lbl) > 30 for lbl in labels):
+            if any(len(lbl) > 40 for lbl in labels):
                 continue
             good.add(s)
         cleaned_map[source] = good
@@ -267,6 +269,9 @@ def run(
     wordlist: Optional[Path] = typer.Option(None, "--wordlist", help="Wordlist for --bruteforce and/or --permutate"),
     resume: Optional[Path] = typer.Option(None, "--resume", help="Resume interrupted run from its output directory"),
     js: bool = typer.Option(False, "--js", help="Extract endpoints, subdomains and secrets from JS assets"),
+    nuclei: bool = typer.Option(False, "--nuclei", help="Run nuclei on nuclei_targets.txt after the scan"),
+    nuclei_severity: str = typer.Option("medium,high,critical", "--nuclei-severity", help="Nuclei severity filter"),
+    shodan: bool = typer.Option(False, "--shodan", help="Enrich resolved IPs with Shodan data (requires SHODAN_API_KEY)"),
 ) -> None:
     """Enumerate subdomains for all domains in the input file."""
     _banner()
@@ -307,6 +312,10 @@ def run(
         flags.append("skip-probe")
     if js:
         flags.append("js-extract")
+    if nuclei:
+        flags.append(f"nuclei({nuclei_severity})")
+    if shodan:
+        flags.append("shodan")
     if resume:
         flags.append(f"resume={resume}")
     if diff:
@@ -320,6 +329,7 @@ def run(
         skip_probe, permutate, recursive, scan_ports,
         str(diff) if diff else None,
         words, bruteforce, resume, js,
+        nuclei, nuclei_severity, shodan,
     ))
 
 
@@ -337,6 +347,9 @@ async def _run_async(
     do_bruteforce: bool,
     resume_dir: Optional[Path],
     do_js: bool,
+    do_nuclei: bool = False,
+    nuclei_severity: str = "medium,high,critical",
+    do_shodan: bool = False,
 ) -> None:
     t0 = time.time()
     all_entries: list[dict] = []
@@ -528,6 +541,24 @@ async def _run_async(
         if resolved_subs:
             all_port_results = await port_scan_batch(resolved_subs, cfg)
 
+    # --- Shodan enrichment ---
+    shodan_results: dict = {}
+    if do_shodan:
+        if not cfg.shodan_key:
+            console.print("[yellow]--shodan requires SHODAN_API_KEY to be set[/]")
+        else:
+            shodan_results = await enrich_with_shodan(all_entries, cfg)
+
+    # --- Enrich interesting scores with HTTP probe data ---
+    if all_probe_results and all_interesting:
+        enrich_with_probe(all_interesting, all_probe_results)
+
+    # --- Security headers audit ---
+    all_header_findings = []
+    if all_probe_results:
+        all_header_findings = audit_headers(all_probe_results)
+        print_headers_summary(all_header_findings)
+
     # --- Export everything ---
     export_all(
         all_entries, source_counts, elapsed,
@@ -541,6 +572,10 @@ async def _run_async(
     )
     if all_js_results:
         write_js_output(all_js_results, run_dir)
+    if all_header_findings:
+        export_headers_audit(all_header_findings, run_dir)
+    if shodan_results:
+        export_shodan(shodan_results, all_entries, run_dir)
 
     live_count = sum(1 for p in all_probe_results if p.live_urls) if all_probe_results else 0
     tech_count = sum(1 for p in all_probe_results if p.technologies) if all_probe_results else 0
@@ -567,6 +602,10 @@ async def _run_async(
     )
     console.print(f"\n[dim]Completed in {elapsed:.1f}s[/]\n")
 
+    # --- Nuclei auto-trigger ---
+    if do_nuclei:
+        await _run_nuclei(run_dir, nuclei_severity)
+
     # --- Diff info for notifications ---
     new_subs: list[str] | None = None
     if diff_dir:
@@ -586,6 +625,47 @@ async def _run_async(
         high_value=all_hv_techs if all_hv_techs else None,
         domains=list({e["root_domain"] for e in all_entries}),
     )
+
+
+async def _run_nuclei(run_dir: Path, severity: str) -> None:
+    """Execute nuclei against the scan's nuclei_targets.txt."""
+    targets = run_dir / "nuclei_targets.txt"
+    if not targets.is_file() or targets.stat().st_size == 0:
+        console.print("[yellow]--nuclei: no targets file found, skipping[/]")
+        return
+
+    nuclei_bin = shutil.which("nuclei")
+    if not nuclei_bin:
+        console.print("[yellow]--nuclei: nuclei binary not found in PATH, skipping[/]")
+        return
+
+    output_file = run_dir / "nuclei_results.txt"
+    cmd = [nuclei_bin, "-l", str(targets), "-severity", severity, "-o", str(output_file), "-silent"]
+    console.print(f"\n[bold magenta]Running nuclei ({severity})...[/]")
+    console.print(f"[dim]{' '.join(cmd)}[/]")
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            err = stderr.decode(errors="replace").strip()[:300]
+            console.print(f"[yellow]nuclei exited {proc.returncode}: {err}[/]")
+        else:
+            lines = [l for l in stdout.decode(errors="replace").splitlines() if l.strip()]
+            if lines:
+                console.print(f"[bold red]nuclei: {len(lines)} finding(s) — see {output_file}[/]")
+                for ln in lines[:10]:
+                    console.print(f"  [red]{ln}[/]")
+                if len(lines) > 10:
+                    console.print(f"  [dim]... and {len(lines) - 10} more[/]")
+            else:
+                console.print("[green]nuclei: no findings[/]")
+    except Exception as exc:
+        console.print(f"[yellow]nuclei failed: {exc}[/]")
 
 
 def _find_sub_zones(subdomains: set[str], root_domain: str) -> list[str]:
@@ -646,9 +726,9 @@ def doctor(
     table.add_column("Check", style="bold")
     table.add_column("Status")
 
-    for name in ("subfinder", "amass"):
-        binary_path = cfg.source(name).path or name
-        found = shutil.which(binary_path)
+    for name in ("subfinder", "amass", "nuclei"):
+        binary_path = cfg.source(name).path if name in ("subfinder", "amass") else name
+        found = shutil.which(binary_path or name)
         if found:
             table.add_row(f"{name} binary", f"[green]OK[/] ({found})")
         else:
@@ -657,6 +737,9 @@ def doctor(
     for label, val in [
         ("VirusTotal API key", cfg.virustotal_key),
         ("urlscan API key", cfg.urlscan_key),
+        ("Chaos API key", cfg.chaos_key),
+        ("GitHub token", cfg.github_token),
+        ("Shodan API key", cfg.shodan_key),
     ]:
         if val:
             masked = val[:4] + "****" + val[-4:] if len(val) > 8 else "****"

@@ -6,12 +6,13 @@
 
 Active and passive subdomain enumeration CLI for Bug Bounty reconnaissance.
 
-`subenum` reads a list of root domains, queries multiple passive sources in
+`subenum` reads a list of root domains, queries **14 passive sources** in
 parallel, brute-forces DNS with custom wordlists, generates smart permutations,
 validates results via DNS, probes for live HTTP services, fingerprints
-technologies, detects WAFs, identifies third-party services, detects potential
-CNAME takeovers, extracts endpoints and secrets from JavaScript files, and
-exports everything to structured output files ready for your Bug Bounty workflow.
+technologies, detects WAFs, audits security headers, identifies third-party
+services, detects potential CNAME takeovers, extracts endpoints and secrets from
+JavaScript files, enriches IPs with Shodan data, and exports everything to
+structured output files ready for your Bug Bounty workflow.
 
 Designed to run unattended on a VPS with full resume support after connection drops.
 
@@ -20,10 +21,11 @@ Designed to run unattended on a VPS with full resume support after connection dr
 ## Features
 
 ### Discovery
-- **10 passive sources** — crt.sh, VirusTotal, urlscan.io, AlienVault OTX,
-  HackerTarget, Wayback Machine, RapidDNS, Anubis DB, subfinder and amass.
-- **6 free sources** that require no API key (crt.sh, AlienVault, HackerTarget,
-  Wayback, RapidDNS, Anubis).
+- **14 passive sources** — crt.sh, VirusTotal, urlscan.io, AlienVault OTX,
+  HackerTarget, Wayback Machine, RapidDNS, Anubis DB, ThreatMiner, BufferOver,
+  Chaos (ProjectDiscovery), GitHub code search, subfinder and amass.
+- **8 free sources** that require no API key (crt.sh, AlienVault, HackerTarget,
+  Wayback, RapidDNS, Anubis, ThreatMiner, BufferOver).
 - **DNS brute-force** (`--bruteforce --wordlist`) — resolves every word in a
   custom wordlist as `word.domain`. Supports any txt wordlist with `#` comments.
 - **Permutation/mutation engine** (`--permutate`) — generates label combinations
@@ -43,15 +45,28 @@ Designed to run unattended on a VPS with full resume support after connection dr
   Jira, Grafana, Elasticsearch, etc.) and flags high-value targets with frequent CVEs.
 - **WAF detection** — identifies Cloudflare, Akamai, Imperva, AWS WAF, Sucuri,
   F5 BIG-IP, Barracuda, Fastly, DDoS-Guard and more.
+- **Security headers audit** — automatically checks every live host for missing
+  or misconfigured security headers: HSTS, CSP (including `unsafe-inline` /
+  `unsafe-eval`), X-Frame-Options, X-Content-Type-Options, Referrer-Policy,
+  Permissions-Policy, CORS misconfigurations (`*`, `null`, credentials), and
+  session cookie flags (Secure, HttpOnly, SameSite). Findings are rated
+  `critical / high / medium / low / info`.
 - **Third-party / CDN detection** — identifies subdomains pointing to Shopify,
   GitHub Pages, Heroku, CloudFront, Azure, Vercel, Netlify and 50+ other
   services via CNAME analysis.
 - **Interesting subdomain tagger** — scores (1–10) and tags subdomains matching
   patterns for admin panels, staging environments, APIs, CI/CD, databases,
-  internal tools and more.
+  internal tools and more. Scores are enriched post-probe with HTTP context
+  (+2 for high-value tech detected, +1 for live without WAF).
+- **Response deduplication** — groups live hosts by body hash. Hosts sharing an
+  identical response (soft-404, generic login, maintenance page) are reported in
+  `duplicates.json` and excluded from `unique_targets.txt` to reduce noise.
 - **Port scanning** (`--scan-ports`) — async scan of 35+ high-value ports
   (Redis, MongoDB, Kubernetes API, Elasticsearch, etc.) on resolved hosts.
 - **CNAME subdomain takeover detection** with 45+ service fingerprints.
+- **Shodan enrichment** (`--shodan`) — queries the Shodan API for every resolved
+  IP, adding open ports, service banners, OS, organisation, and CVEs with CVSS
+  scores to the output.
 
 ### JavaScript analysis
 - **JS extraction** (`--js`) — crawls live hosts, fetches all JavaScript files
@@ -72,6 +87,9 @@ Designed to run unattended on a VPS with full resume support after connection dr
   progress to `.checkpoint.json` after each domain completes. Resume a
   VPS run after a connection drop without losing completed work.
 - **Diff mode** (`--diff`) — compare against a previous scan and surface new targets.
+- **Nuclei auto-trigger** (`--nuclei`) — runs `nuclei` on `nuclei_targets.txt`
+  immediately after the scan finishes. Severity filter configurable with
+  `--nuclei-severity`.
 - **Webhook notifications** — Discord, Slack or generic JSON webhooks for
   continuous monitoring workflows.
 - **Next Steps summary** — after each scan shows the top 10 targets to
@@ -85,6 +103,8 @@ Designed to run unattended on a VPS with full resume support after connection dr
 - Python 3.12+
 - (Optional) [subfinder](https://github.com/projectdiscovery/subfinder) and
   [amass](https://github.com/owasp-amass/amass) binaries in `$PATH`.
+- (Optional) [nuclei](https://github.com/projectdiscovery/nuclei) binary in
+  `$PATH` for `--nuclei`.
 
 ## Installation
 
@@ -106,12 +126,26 @@ cp .env.example .env
 ```
 
 ```env
+# Required for VirusTotal source
 VT_API_KEY=your_key_here
+
+# Required for urlscan.io source
 URLSCAN_API_KEY=your_key_here
+
+# ProjectDiscovery Chaos dataset — free at chaos.projectdiscovery.io
+CHAOS_API_KEY=your_key_here
+
+# GitHub code search — optional, raises rate limit from 10 to 30 req/min
+GITHUB_TOKEN=your_token_here
+
+# Shodan host enrichment — required for --shodan
+SHODAN_API_KEY=your_key_here
+
+# Discord / Slack webhook for notifications
 WEBHOOK_URL=https://discord.com/api/webhooks/your/webhook
 ```
 
-Sources whose keys are missing are skipped silently. The 6 free sources work
+Sources whose keys are missing are skipped silently. The 8 free sources work
 without any keys.
 
 ### YAML config (optional)
@@ -142,7 +176,7 @@ target.org
 # Passive enumeration only (fast, no active requests)
 python -m subenum.main run -i domains.txt --skip-probe
 
-# Full passive + probing + WAF/tech detection
+# Full passive + probing + security headers audit
 python -m subenum.main run -i domains.txt
 
 # Full recon with permutations and recursive enumeration
@@ -157,6 +191,12 @@ python -m subenum.main run -i domains.txt \
 python -m subenum.main run -i domains.txt \
   --bruteforce --wordlist wordlists/combined.txt \
   --permutate --recursive --scan-ports --js
+
+# Full recon + Shodan enrichment + nuclei scan
+python -m subenum.main run -i domains.txt \
+  --bruteforce --wordlist wordlists/combined.txt \
+  --permutate --recursive --scan-ports --js \
+  --shodan --nuclei --nuclei-severity medium,high,critical
 
 # Compare against a previous scan
 python -m subenum.main run -i domains.txt --diff output/20260325_132129
@@ -226,18 +266,25 @@ same directory is reused.
 | `all_subdomains.txt` | All unique subdomains found, one per line |
 | `resolved_subdomains.txt` | Only subdomains that resolved via DNS |
 | `live_hosts.txt` | Live HTTP/HTTPS URLs |
-| `nuclei_targets.txt` | One URL per subdomain (prefers HTTPS) for `nuclei -l` |
+| `nuclei_targets.txt` | One URL per subdomain (prefers 2xx over 3xx) for `nuclei -l` |
+| `unique_targets.txt` | Live hosts with unique responses (soft-404/generic excluded) |
 | `nowaf_targets.txt` | Live hosts without WAF — priority targets for manual testing |
 | `httpx_output.jsonl` | One JSON per line, compatible with httpx / nuclei / katana pipelines |
-| `interesting.txt` | Priority-scored interesting targets with tags |
+| `interesting.txt` | Priority-scored interesting targets with tags and probe context |
+| `security_headers.txt` | Human-readable security headers audit report |
+| `security_headers.json` | Security header findings per host with severity and recommendations |
 | `ips.txt` | Unique resolved IPs for nmap / masscan |
 | `scope.txt` | `*.domain` format for Burp Suite scope import |
 | `takeover_candidates.txt` | Potential CNAME takeover targets |
 | `ports.json` | Open ports per host from port scanning |
+| `duplicates.json` | Groups of hosts sharing an identical body hash (soft-404 / generic pages) |
+| `shodan_enrichment.json` | Shodan data per IP: ports, banners, CVEs (if `--shodan`) |
+| `shodan_enrichment.txt` | Human-readable Shodan summary (if `--shodan`) |
 | `js_findings.json` | Full JS analysis: endpoints, secrets and subdomains per host |
 | `js_endpoints.txt` | All unique endpoints extracted from JS files |
 | `js_secrets.txt` | Secrets found in JS (values masked) |
 | `js_subdomains.txt` | Subdomains discovered inside JS bundles |
+| `nuclei_results.txt` | Nuclei findings (if `--nuclei`) |
 | `commands.txt` | Ready-to-run commands for gowitness, nuclei, ffuf, katana, nmap |
 | `stats.json` | Counts, technology summary, elapsed time |
 | `diff.json` | Delta vs previous scan (if `--diff` was used) |
@@ -271,21 +318,42 @@ same directory is reused.
   "interesting": true,
   "interesting_score": 7,
   "interesting_tags": ["api"],
-  "interesting_reason": "API endpoint",
+  "interesting_reason": "API endpoint [no-WAF]",
   "open_ports": {"443": "HTTPS", "9200": "Elasticsearch"}
 }
 ```
 
 ### interesting.txt format
 
-Sorted by priority score (1–10):
+Sorted by priority score (1–10). Scores are enriched post-probe with HTTP
+context (`tech:<name>` when a high-value technology is detected, `no-WAF` when
+the host is live without WAF protection):
 
 ```text
-[ 9] admin.example.com      admin       Admin panel
-[ 9] jenkins.example.com    cicd        Jenkins CI
+[10] jenkins.example.com    cicd        Jenkins CI [tech:Jenkins no-WAF]
+[ 9] admin.example.com      admin       Admin panel [no-WAF]
 [ 8] staging.example.com    dev         Staging environment
-[ 8] grafana.example.com    monitoring  Grafana
+[ 8] grafana.example.com    monitoring  Grafana [tech:Grafana no-WAF]
 [ 7] api.example.com        api         API endpoint
+```
+
+### security_headers.txt format
+
+```text
+## HIGH (2)
+
+  [admin.example.com] Missing HSTS
+    detail: missing
+    fix:    Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+
+  [api.example.com] CORS: null origin allowed
+    detail: Access-Control-Allow-Origin: null
+    fix:    Never allow the null origin — it can be triggered by sandboxed iframes.
+
+## MEDIUM (5)
+
+  [app.example.com] Missing Content-Security-Policy
+  ...
 ```
 
 ---
@@ -305,6 +373,9 @@ Sorted by priority score (1–10):
 | `--recursive` | Re-enumerate discovered sub-zones |
 | `--scan-ports` | Async port scan on resolved hosts |
 | `--js` | Fetch and analyse JavaScript files (requires probing) |
+| `--shodan` | Enrich resolved IPs with Shodan data (requires `SHODAN_API_KEY`) |
+| `--nuclei` | Run nuclei on `nuclei_targets.txt` after the scan |
+| `--nuclei-severity` | Nuclei severity filter (default: `medium,high,critical`) |
 | `--resume` | Resume from an existing output directory |
 | `--diff` | Compare against a previous output directory |
 
@@ -342,8 +413,12 @@ sort -u wordlists/bb_personal.txt seclists_5000.txt n0kovo_medium.txt > wordlist
 | Wayback Machine | Historical URLs | No |
 | RapidDNS | DNS database | No |
 | Anubis DB | Subdomain DB | No |
+| ThreatMiner | Passive DNS | No |
+| BufferOver | TLS scan data | No |
 | VirusTotal | API | `VT_API_KEY` |
 | urlscan.io | API | `URLSCAN_API_KEY` |
+| Chaos (ProjectDiscovery) | API | `CHAOS_API_KEY` (free) |
+| GitHub code search | API | `GITHUB_TOKEN` (optional, raises rate limit) |
 | subfinder | External binary | No (install binary) |
 | amass | External binary | No (install binary) |
 
@@ -356,20 +431,22 @@ subenum/
   __init__.py        Package init + version
   main.py            CLI (Typer) and orchestration
   config.py          YAML + .env config loading
-  sources.py         10 passive source implementations
+  sources.py         14 passive source implementations
   dns_utils.py       DNS resolution + wildcard detection
   http_probe.py      HTTP/HTTPS probing + tech + WAF detection
   tech_detect.py     Technology + WAF fingerprint rules
   scope_check.py     Third-party / CDN detection via CNAME
-  interesting.py     Interesting subdomain tagger + scoring
+  interesting.py     Interesting subdomain tagger + scoring + probe enrichment
+  headers_audit.py   Security headers audit (HSTS, CSP, CORS, cookies, etc.)
   ports.py           Async port scanning (35+ ports)
   takeover.py        CNAME takeover detection
   permutations.py    Subdomain permutation generation
   bruteforce.py      DNS brute-force with custom wordlists
   checkpoint.py      Resume / checkpoint persistence
   js_extract.py      JavaScript endpoint, secret and subdomain extraction
+  shodan_enrich.py   Shodan IP enrichment (ports, banners, CVEs)
   notify.py          Webhook notifications (Discord/Slack)
-  exporters.py       File export (txt/jsonl/json/stats/diff)
+  exporters.py       File export (txt/jsonl/json/stats/diff/dedup)
 
 wordlists/
   bb_personal.txt    Curated personal wordlist (~750 words, 17 sections)
@@ -388,5 +465,6 @@ wordlists/
   engagement agreement.
 - Passive reconnaissance still generates network traffic; respect rate limits
   and terms of service of all third-party APIs.
-- Port scanning and JS analysis are active techniques — ensure they are within scope.
+- Port scanning, JS analysis, and Shodan enrichment are active or data-intensive
+  techniques — ensure they are within scope.
 - The authors assume no liability for misuse of this tool.

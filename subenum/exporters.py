@@ -328,8 +328,17 @@ def export_all(
     if probe_results:
         nuclei_targets: list[str] = []
         for pr in probe_results:
-            if pr.live_urls:
-                nuclei_targets.append(pr.live_urls[0])  # prefer HTTPS
+            if not pr.live_urls:
+                continue
+            # Prefer 2xx URLs (better nuclei coverage than redirects)
+            https_ok = pr.https_status is not None and 200 <= pr.https_status < 300
+            http_ok = pr.http_status is not None and 200 <= pr.http_status < 300
+            if https_ok:
+                nuclei_targets.append(f"https://{pr.subdomain}")
+            elif http_ok:
+                nuclei_targets.append(f"http://{pr.subdomain}")
+            else:
+                nuclei_targets.append(pr.live_urls[0])
         if nuclei_targets:
             (out_dir / "nuclei_targets.txt").write_text("\n".join(sorted(nuclei_targets)) + "\n")
 
@@ -392,6 +401,46 @@ def export_all(
         if nowaf:
             (out_dir / "nowaf_targets.txt").write_text("\n".join(sorted(nowaf)) + "\n")
 
+    # --- Body hash deduplication ---
+    # Group live hosts by response body hash. Hashes shared by ≥3 hosts are
+    # likely generic responses (soft-404, login portal, maintenance page, etc.)
+    # and are less interesting for manual testing.
+    if probe_results:
+        hash_to_hosts: dict[str, list[str]] = {}
+        for pr in probe_results:
+            if pr.live_urls and pr.body_hash:
+                hash_to_hosts.setdefault(pr.body_hash, []).append(pr.live_urls[0])
+
+        _DUPLICATE_THRESHOLD = 3
+        duplicate_hashes = {h for h, hosts in hash_to_hosts.items() if len(hosts) >= _DUPLICATE_THRESHOLD}
+
+        if duplicate_hashes:
+            dup_data = {
+                h: sorted(hosts)
+                for h, hosts in sorted(hash_to_hosts.items())
+                if h in duplicate_hashes
+            }
+            (out_dir / "duplicates.json").write_text(
+                json.dumps(dup_data, indent=2, ensure_ascii=False) + "\n"
+            )
+
+        # unique_targets.txt: live hosts whose body hash is NOT in the duplicate set
+        unique_live: list[str] = []
+        for pr in probe_results:
+            if pr.live_urls and pr.body_hash not in duplicate_hashes:
+                unique_live.append(pr.live_urls[0])
+            elif pr.live_urls and not pr.body_hash:
+                unique_live.append(pr.live_urls[0])
+        if unique_live:
+            (out_dir / "unique_targets.txt").write_text("\n".join(sorted(unique_live)) + "\n")
+
+        dup_host_count = sum(len(v) for v in hash_to_hosts.values() if len(v) >= _DUPLICATE_THRESHOLD)
+        if dup_host_count:
+            console.print(
+                f"[dim]Dedup: {dup_host_count} hosts share a generic response "
+                f"({len(duplicate_hashes)} distinct hashes) — see duplicates.json[/]"
+            )
+
     # --- commands.txt (ready-to-run offensive commands) ---
     if probe_results and any(p.live_urls for p in probe_results):
         _export_commands(out_dir)
@@ -439,10 +488,17 @@ def _export_commands(out_dir: Path) -> None:
         "# Feed httpx-compatible JSONL to other tools",
         f"# JSONL file: {d}/httpx_output.jsonl",
         "",
+        "# Unique targets only (soft-404/generic responses excluded)",
+        f"nuclei -l {d}/unique_targets.txt -severity medium,high,critical -o {d}/nuclei_unique.txt",
+        "",
         "# JS analysis output (if --js was used)",
         f"# Endpoints : {d}/js_endpoints.txt",
         f"# Secrets   : {d}/js_secrets.txt   (masked; full values in js_findings.json)",
         f"# New subs  : {d}/js_subdomains.txt",
+        "",
+        "# Security headers findings",
+        f"# Report    : {d}/security_headers.txt",
+        f"# JSON      : {d}/security_headers.json",
     ]
     (out_dir / "commands.txt").write_text("\n".join(lines) + "\n")
 

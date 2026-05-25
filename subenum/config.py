@@ -39,6 +39,9 @@ class Settings:
     # API keys (loaded from env)
     virustotal_key: str = ""
     urlscan_key: str = ""
+    chaos_key: str = ""
+    github_token: str = ""
+    shodan_key: str = ""
 
     def source(self, name: str) -> SourceCfg:
         return self.sources.get(name, SourceCfg())
@@ -59,6 +62,10 @@ _DEFAULT_SOURCES: dict[str, dict] = {
     "wayback":        {"enabled": True, "timeout": 30},
     "rapiddns":       {"enabled": True, "timeout": 20},
     "anubis":         {"enabled": True, "timeout": 15},
+    "threatminer":    {"enabled": True, "timeout": 15},
+    "bufferover":     {"enabled": True, "timeout": 15},
+    "chaos":          {"enabled": True, "timeout": 20},
+    "github":         {"enabled": True, "timeout": 20},
 }
 
 
@@ -101,4 +108,7 @@ def load_settings(config_path: str | Path | None = None) -> Settings:
         sources=sources,
         virustotal_key=os.getenv("VT_API_KEY", ""),
         urlscan_key=os.getenv("URLSCAN_API_KEY", ""),
+        chaos_key=os.getenv("CHAOS_API_KEY", ""),
+        github_token=os.getenv("GITHUB_TOKEN", ""),
+        shodan_key=os.getenv("SHODAN_API_KEY", ""),
     )

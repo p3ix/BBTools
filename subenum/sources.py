@@ -95,8 +95,11 @@ async def fetch_crtsh(domain: str, cfg: "Settings") -> set[str]:
     for entry in entries:
         for name in entry.get("name_value", "").splitlines():
             name = name.strip().lower()
-            if name and not name.startswith("*"):
-                subs.add(name)
+            if not name:
+                continue
+            if name.startswith("*."):
+                name = name[2:]  # *.sub.example.com → sub.example.com
+            subs.add(name)
     return subs
 
 
@@ -292,6 +295,126 @@ async def fetch_anubis(domain: str, cfg: "Settings") -> set[str]:
     return set()
 
 
+async def fetch_threatminer(domain: str, cfg: "Settings") -> set[str]:
+    """Passive DNS data from ThreatMiner (free, no key required)."""
+    src = cfg.source("threatminer")
+    url = "https://api.threatminer.org/v2/domain.php"
+    params = {"q": domain, "rt": "5"}
+    try:
+        async with httpx.AsyncClient(timeout=src.timeout) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        console.print(_short_error("threatminer", exc))
+        return set()
+
+    results = data.get("results", [])
+    if not isinstance(results, list):
+        return set()
+    return {s.strip().lower() for s in results if isinstance(s, str) and s.strip()}
+
+
+async def fetch_bufferover(domain: str, cfg: "Settings") -> set[str]:
+    """TLS scan data from BufferOver/Tls.BufferOver.run (free, no key required)."""
+    src = cfg.source("bufferover")
+    url = "https://tls.bufferover.run/dns"
+    params = {"q": f".{domain}"}
+    try:
+        async with httpx.AsyncClient(timeout=src.timeout) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        console.print(_short_error("bufferover", exc))
+        return set()
+
+    subs: set[str] = set()
+    # FDNS_A entries are "IP,subdomain" pairs
+    for entry in data.get("FDNS_A", []) or []:
+        if "," in entry:
+            host = entry.split(",", 1)[1].strip().lower()
+            if host:
+                subs.add(host)
+    # RDNS entries are plain hostnames
+    for entry in data.get("RDNS", []) or []:
+        host = entry.strip().lower()
+        if host:
+            subs.add(host)
+    return subs
+
+
+async def fetch_chaos(domain: str, cfg: "Settings") -> set[str]:
+    """ProjectDiscovery Chaos dataset (requires CHAOS_API_KEY)."""
+    if not cfg.chaos_key:
+        return set()
+    src = cfg.source("chaos")
+    url = f"https://dns.projectdiscovery.io/dns/{domain}/subdomains"
+    headers = {"Authorization": cfg.chaos_key}
+    try:
+        async with httpx.AsyncClient(timeout=src.timeout) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 401:
+                console.print("[yellow]\\[chaos] invalid API key[/]")
+                return set()
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        console.print(_short_error("chaos", exc))
+        return set()
+
+    # API returns {"subdomains": ["api", "www", ...], "domain": "example.com"}
+    # Each entry is a label prefix, not a full FQDN
+    raw_subs = data.get("subdomains", [])
+    if not isinstance(raw_subs, list):
+        return set()
+    return {f"{s.strip().lower()}.{domain}" for s in raw_subs if isinstance(s, str) and s.strip()}
+
+
+async def fetch_github(domain: str, cfg: "Settings") -> set[str]:
+    """Search GitHub public code for subdomain references (GITHUB_TOKEN optional)."""
+    src = cfg.source("github")
+    url = "https://api.github.com/search/code"
+    headers: dict[str, str] = {"Accept": "application/vnd.github+json"}
+    if cfg.github_token:
+        headers["Authorization"] = f"Bearer {cfg.github_token}"
+
+    # Regex to extract FQDNs belonging to the target domain from text snippets
+    _sub_re = re.compile(
+        r"(?i)([a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?)*\."
+        + re.escape(domain)
+        + r")"
+    )
+
+    subs: set[str] = set()
+    try:
+        async with httpx.AsyncClient(timeout=src.timeout) as client:
+            params = {"q": f'"{domain}"', "per_page": "100"}
+            resp = await client.get(url, headers=headers, params=params)
+            if resp.status_code == 403:
+                console.print("[yellow]\\[github] rate limited — set GITHUB_TOKEN to increase limits[/]")
+                return set()
+            if resp.status_code == 422:
+                return set()
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        console.print(_short_error("github", exc))
+        return set()
+
+    for item in data.get("items", []):
+        # Extract from repository name + path
+        for field in ("path", "name"):
+            for m in _sub_re.finditer(item.get(field, "")):
+                subs.add(m.group(1).lower())
+        # Extract from text_matches snippets (available with the right Accept header)
+        for match in item.get("text_matches", []):
+            for m in _sub_re.finditer(match.get("fragment", "")):
+                subs.add(m.group(1).lower())
+
+    return subs
+
+
 # ---------------------------------------------------------------------------
 # Registry & orchestrator
 # ---------------------------------------------------------------------------
@@ -307,6 +430,10 @@ SOURCE_REGISTRY: dict[str, callable] = {
     "wayback":        fetch_wayback,
     "rapiddns":       fetch_rapiddns,
     "anubis":         fetch_anubis,
+    "threatminer":    fetch_threatminer,
+    "bufferover":     fetch_bufferover,
+    "chaos":          fetch_chaos,
+    "github":         fetch_github,
 }
 
 

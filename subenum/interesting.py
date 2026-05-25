@@ -9,6 +9,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from subenum.http_probe import ProbeResult
 
 
 @dataclass
@@ -148,3 +152,33 @@ def tag_interesting(subdomains: list[str]) -> list[InterestingHit]:
 
     hits.sort(key=lambda h: (-h.score, h.subdomain))
     return hits
+
+
+def enrich_with_probe(
+    hits: list[InterestingHit],
+    probe_results: list["ProbeResult"],
+) -> None:
+    """Boost interesting scores using HTTP probe data (in-place).
+
+    Boosts applied (capped at 10):
+      +2  high-value technology detected (Jenkins, GitLab, Grafana, etc.)
+      +1  live and no WAF protection
+    Also appends context to the reason string so interesting.txt reflects why.
+    """
+    probe_map = {p.subdomain: p for p in probe_results}
+    for hit in hits:
+        pr = probe_map.get(hit.subdomain)
+        if pr is None:
+            continue
+        boost = 0
+        extra: list[str] = []
+        if pr.high_value_techs:
+            boost += 2
+            extra.append(f"tech:{','.join(pr.high_value_techs)}")
+        if pr.live_urls and not pr.waf:
+            boost += 1
+            extra.append("no-WAF")
+        if boost:
+            hit.score = min(10, hit.score + boost)
+            hit.reason = hit.reason + " [" + " ".join(extra) + "]"
+    hits.sort(key=lambda h: (-h.score, h.subdomain))
