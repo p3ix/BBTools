@@ -40,28 +40,38 @@ class ShodanHostData:
     vulns: list[dict] = field(default_factory=list)    # [{cve, cvss, summary}]
 
 
+class _ShodanPlanError(Exception):
+    """Raised when Shodan returns 403 (host API requires paid plan)."""
+
+
 async def _fetch_host(
-    ip: str, api_key: str, client: httpx.AsyncClient, sem: asyncio.Semaphore
+    ip: str, api_key: str, client: httpx.AsyncClient
 ) -> ShodanHostData | None:
-    async with sem:
-        try:
-            resp = await client.get(
-                _SHODAN_HOST_URL.format(ip=ip),
-                params={"key": api_key},
-            )
-            if resp.status_code == 404:
-                return None
-            if resp.status_code == 401:
-                console.print("[yellow]\\[shodan] invalid API key[/]")
-                return None
-            if resp.status_code == 429:
-                console.print("[yellow]\\[shodan] rate limited[/]")
-                return None
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as exc:
-            console.print(f"[yellow]\\[shodan] {ip}: {str(exc)[:80]}[/]")
+    try:
+        resp = await client.get(
+            _SHODAN_HOST_URL.format(ip=ip),
+            params={"key": api_key},
+        )
+        if resp.status_code == 404:
             return None
+        if resp.status_code == 401:
+            console.print("[yellow]\\[shodan] Invalid API key — check SHODAN_API_KEY[/]")
+            return None
+        if resp.status_code == 403:
+            raise _ShodanPlanError()
+        if resp.status_code == 429:
+            console.print("[yellow]\\[shodan] Rate limited — slowing down[/]")
+            await asyncio.sleep(5)
+            return None
+        resp.raise_for_status()
+        data = resp.json()
+    except _ShodanPlanError:
+        raise
+    except Exception as exc:
+        # Avoid leaking the API key that appears in the URL
+        msg = str(exc).split("?key=")[0][:80]
+        console.print(f"[yellow]\\[shodan] {ip}: {msg}[/]")
+        return None
 
     host = ShodanHostData(ip=ip)
     host.ports = sorted(data.get("ports", []))
@@ -116,9 +126,8 @@ async def enrich_with_shodan(
 
     console.print(f"[bold]Shodan:[/] enriching {len(unique_ips)} unique IP(s)...")
 
-    # Shodan free tier allows 1 req/sec; cap concurrency at 1 to stay safe
-    sem = asyncio.Semaphore(1)
     results: dict[str, ShodanHostData] = {}
+    ip_list = sorted(unique_ips)
 
     async with httpx.AsyncClient(timeout=15) as client:
         with Progress(
@@ -128,19 +137,21 @@ async def enrich_with_shodan(
             MofNCompleteColumn(),
             console=console,
         ) as progress:
-            task = progress.add_task("enriching", total=len(unique_ips))
-            ip_list = sorted(unique_ips)
-            tasks = [
-                asyncio.create_task(_fetch_host(ip, cfg.shodan_key, client, sem))
-                for ip in ip_list
-            ]
-            for ip, coro in zip(ip_list, asyncio.as_completed(tasks)):
-                data = await coro
+            task_bar = progress.add_task("enriching", total=len(ip_list))
+            for ip in ip_list:
+                try:
+                    data = await _fetch_host(ip, cfg.shodan_key, client)
+                except _ShodanPlanError:
+                    progress.stop()
+                    console.print(
+                        "[yellow]\\[shodan] 403 — host lookup requires a paid Shodan plan. "
+                        "Skipping remaining IPs.[/]"
+                    )
+                    break
                 if data is not None:
                     results[data.ip] = data
-                progress.advance(task)
-                # Respect Shodan rate limit
-                await asyncio.sleep(1.1)
+                progress.advance(task_bar)
+                await asyncio.sleep(1.1)  # Shodan free tier: 1 req/sec
 
     found = len(results)
     cve_hosts = sum(1 for h in results.values() if h.cves)

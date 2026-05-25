@@ -25,7 +25,9 @@ from typing import Optional
 
 import typer
 from rich.console import Console
+from rich.live import Live
 from rich.table import Table
+from rich.text import Text
 
 from subenum import __version__
 from subenum.bruteforce import bruteforce_domain, load_wordlist
@@ -628,9 +630,9 @@ async def _run_async(
 
 
 async def _run_nuclei(run_dir: Path, severity: str) -> None:
-    """Execute nuclei against the scan's nuclei_targets.txt."""
-    targets = run_dir / "nuclei_targets.txt"
-    if not targets.is_file() or targets.stat().st_size == 0:
+    """Execute nuclei with real-time progress display."""
+    targets_file = run_dir / "nuclei_targets.txt"
+    if not targets_file.is_file() or targets_file.stat().st_size == 0:
         console.print("[yellow]--nuclei: no targets file found, skipping[/]")
         return
 
@@ -639,10 +641,22 @@ async def _run_nuclei(run_dir: Path, severity: str) -> None:
         console.print("[yellow]--nuclei: nuclei binary not found in PATH, skipping[/]")
         return
 
+    target_count = sum(1 for ln in targets_file.read_text().splitlines() if ln.strip())
     output_file = run_dir / "nuclei_results.txt"
-    cmd = [nuclei_bin, "-l", str(targets), "-severity", severity, "-o", str(output_file), "-silent"]
-    console.print(f"\n[bold magenta]Running nuclei ({severity})...[/]")
-    console.print(f"[dim]{' '.join(cmd)}[/]")
+
+    cmd = [
+        nuclei_bin,
+        "-l", str(targets_file),
+        "-severity", severity,
+        "-o", str(output_file),
+        "-stats", "-stats-interval", "5",
+    ]
+    console.print(
+        f"\n[bold magenta]Running nuclei[/] — {target_count} targets | severity: {severity}"
+    )
+
+    findings: list[str] = []
+    _progress = {"requests": "starting…"}
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -650,20 +664,66 @@ async def _run_nuclei(run_dir: Path, severity: str) -> None:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            err = stderr.decode(errors="replace").strip()[:300]
-            console.print(f"[yellow]nuclei exited {proc.returncode}: {err}[/]")
+
+        async def _drain_stdout() -> None:
+            assert proc.stdout
+            async for raw in proc.stdout:
+                line = raw.decode(errors="replace").strip()
+                if line:
+                    findings.append(line)
+
+        async def _drain_stderr() -> None:
+            assert proc.stderr
+            async for raw in proc.stderr:
+                line = raw.decode(errors="replace").strip()
+                # Nuclei stats line: "... | Requests: 1234/394765 | ..."
+                m = re.search(r"Requests:\s*([\d,]+)/([\d,]+)", line, re.I)
+                if m:
+                    done_n = int(m.group(1).replace(",", ""))
+                    total_n = int(m.group(2).replace(",", ""))
+                    pct = done_n / total_n * 100 if total_n else 0
+                    _progress["requests"] = f"{done_n:,}/{total_n:,}  ({pct:.0f}%)"
+
+        async def _update_live(live: Live) -> None:
+            _SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+            i = 0
+            while proc.returncode is None:
+                spin = _SPIN[i % len(_SPIN)]
+                color = "red" if findings else "cyan"
+                live.update(Text.from_markup(
+                    f"[bold magenta]{spin} nuclei[/]  "
+                    f"[dim]requests:[/] {_progress['requests']}  "
+                    f"[dim]findings:[/] [bold {color}]{len(findings)}[/]"
+                ))
+                i += 1
+                await asyncio.sleep(0.4)
+            live.update(Text.from_markup(
+                f"[bold green]✓ nuclei done[/]  "
+                f"[dim]findings:[/] [bold {'red' if findings else 'green'}]{len(findings)}[/]"
+            ))
+
+        with Live(console=console, refresh_per_second=4) as live:
+            await asyncio.gather(
+                _drain_stdout(),
+                _drain_stderr(),
+                _update_live(live),
+                proc.wait(),
+            )
+
+        if proc.returncode not in (0, None) and not findings:
+            console.print(f"[yellow]nuclei exited {proc.returncode}[/]")
+
+        if findings:
+            console.print(
+                f"\n[bold red]nuclei: {len(findings)} finding(s)[/] — {output_file.name}"
+            )
+            for ln in findings[:10]:
+                console.print(f"  [red]{ln}[/]")
+            if len(findings) > 10:
+                console.print(f"  [dim]... and {len(findings) - 10} more[/]")
         else:
-            lines = [l for l in stdout.decode(errors="replace").splitlines() if l.strip()]
-            if lines:
-                console.print(f"[bold red]nuclei: {len(lines)} finding(s) — see {output_file}[/]")
-                for ln in lines[:10]:
-                    console.print(f"  [red]{ln}[/]")
-                if len(lines) > 10:
-                    console.print(f"  [dim]... and {len(lines) - 10} more[/]")
-            else:
-                console.print("[green]nuclei: no findings[/]")
+            console.print("[green]nuclei: no findings[/]")
+
     except Exception as exc:
         console.print(f"[yellow]nuclei failed: {exc}[/]")
 
