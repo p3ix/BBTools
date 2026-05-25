@@ -1,8 +1,9 @@
 """HTTP/HTTPS probing for resolved subdomains.
 
-Probes both http:// and https:// for each subdomain, capturing status codes,
-page titles, server headers, redirects, response headers, cookies and body
-hash. The raw headers/body snippet are passed to tech_detect for fingerprinting.
+Probes both http:// and https:// for each subdomain concurrently, capturing
+status codes, page titles, server headers, redirects, response headers,
+cookies and body hash. The raw headers/body snippet are passed to
+tech_detect for fingerprinting.
 """
 
 from __future__ import annotations
@@ -26,6 +27,10 @@ console = Console(stderr=True)
 
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 
+# Separate connect and read timeouts: connect fast, allow more time to read.
+_CONNECT_TIMEOUT = 5.0
+_READ_TIMEOUT    = 8.0
+
 
 @dataclass
 class ProbeResult:
@@ -48,7 +53,7 @@ class ProbeResult:
 async def _probe_scheme(
     client: httpx.AsyncClient, url: str
 ) -> tuple[int | None, str, str, str, int, str, dict[str, str], list[str], str]:
-    """Probe a URL. Returns (status, title, final_url, server, cl, body_hash, headers, cookies, body_snippet)."""
+    """Probe a single URL. Returns (status, title, final_url, server, cl, body_hash, headers, cookies, body_snippet)."""
     try:
         resp = await client.get(url, follow_redirects=True)
         body_bytes = resp.content
@@ -79,11 +84,14 @@ async def probe_subdomain(
 ) -> ProbeResult:
     result = ProbeResult(subdomain=sub)
 
-    http_st, http_title, http_redir, http_srv, http_cl, http_hash, http_hdrs, http_cookies, http_body = (
-        await _probe_scheme(client, f"http://{sub}")
-    )
-    https_st, https_title, https_redir, https_srv, https_cl, https_hash, https_hdrs, https_cookies, https_body = (
-        await _probe_scheme(client, f"https://{sub}")
+    # Probe HTTP and HTTPS in parallel — halves latency vs sequential
+    (
+        http_st, http_title, http_redir, http_srv, http_cl, http_hash, http_hdrs, http_cookies, http_body
+    ), (
+        https_st, https_title, https_redir, https_srv, https_cl, https_hash, https_hdrs, https_cookies, https_body
+    ) = await asyncio.gather(
+        _probe_scheme(client, f"http://{sub}"),
+        _probe_scheme(client, f"https://{sub}"),
     )
 
     result.http_status = http_st
@@ -118,17 +126,29 @@ async def probe_batch(
     cfg: "Settings",
 ) -> list[ProbeResult]:
     """Probe a list of subdomains for HTTP/HTTPS concurrently."""
-    timeout = 10
-    concurrency = min(cfg.concurrency, 20)
+    concurrency = cfg.probe_concurrency
     sem = asyncio.Semaphore(concurrency)
+
+    timeout = httpx.Timeout(
+        connect=_CONNECT_TIMEOUT,
+        read=_READ_TIMEOUT,
+        write=5.0,
+        pool=_CONNECT_TIMEOUT,
+    )
 
     async def _probe_one(sub: str, client: httpx.AsyncClient) -> ProbeResult:
         async with sem:
             return await probe_subdomain(sub, client)
 
     async with httpx.AsyncClient(
-        timeout=timeout, verify=False, follow_redirects=True,
-        limits=httpx.Limits(max_connections=concurrency, max_keepalive_connections=concurrency),
+        timeout=timeout,
+        verify=False,
+        follow_redirects=True,
+        limits=httpx.Limits(
+            max_connections=concurrency,
+            max_keepalive_connections=concurrency // 2,
+            keepalive_expiry=10,
+        ),
     ) as client:
         with Progress(
             SpinnerColumn(),

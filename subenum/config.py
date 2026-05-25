@@ -26,12 +26,20 @@ class SourceCfg:
 
 @dataclass
 class Settings:
-    concurrency: int = 20
+    # DNS concurrency — how many parallel resolution tasks to run.
+    # 150 is safe for a VPS with 4 resolvers; raise to 300 for faster machines.
+    concurrency: int = 150
+
+    # HTTP probe concurrency — independent from DNS concurrency.
+    probe_concurrency: int = 40
 
     # DNS
-    dns_timeout: int = 5
+    dns_timeout: int = 4       # per-query lifetime (seconds)
     dns_retries: int = 2
-    dns_resolvers: list[str] = field(default_factory=lambda: ["8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222"])
+    dns_resolvers: list[str] = field(default_factory=lambda: [
+        "8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222",
+        "8.8.4.4", "1.0.0.1",  # secondary resolvers for higher throughput
+    ])
 
     # Per-source configuration
     sources: dict[str, SourceCfg] = field(default_factory=dict)
@@ -101,10 +109,14 @@ def load_settings(config_path: str | Path | None = None) -> Settings:
     sources = {name: _parse_source(name, sources_raw.get(name)) for name in all_source_names}
 
     return Settings(
-        concurrency=raw.get("concurrency", 20),
-        dns_timeout=dns_block.get("timeout", 5),
+        concurrency=raw.get("concurrency", 150),
+        probe_concurrency=raw.get("probe_concurrency", 40),
+        dns_timeout=dns_block.get("timeout", 4),
         dns_retries=dns_block.get("retries", 2),
-        dns_resolvers=dns_block.get("resolvers", ["8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222"]),
+        dns_resolvers=dns_block.get("resolvers", [
+            "8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222",
+            "8.8.4.4", "1.0.0.1",
+        ]),
         sources=sources,
         virustotal_key=os.getenv("VT_API_KEY", ""),
         urlscan_key=os.getenv("URLSCAN_API_KEY", ""),

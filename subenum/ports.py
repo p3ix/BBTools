@@ -59,43 +59,42 @@ HIGH_VALUE_PORTS: dict[int, str] = {
     27017: "MongoDB",
 }
 
+# Reduced timeout: TCP SYN on a well-connected VPS either answers fast or
+# doesn't answer at all — 1.5s is enough without wasting time on dead ports.
+_PORT_TIMEOUT = 1.5
+
 
 @dataclass
 class PortResult:
     host: str
-    open_ports: dict[int, str] = field(default_factory=dict)  # port -> service hint
+    open_ports: dict[int, str] = field(default_factory=dict)
 
 
-async def _check_port(
-    host: str, port: int, timeout: float = 3.0
-) -> bool:
-    try:
-        _, writer = await asyncio.wait_for(
-            asyncio.open_connection(host, port),
-            timeout=timeout,
-        )
-        writer.close()
-        await writer.wait_closed()
-        return True
-    except (asyncio.TimeoutError, OSError, ConnectionRefusedError):
-        return False
+async def _check_port(host: str, port: int, sem: asyncio.Semaphore) -> tuple[int, bool]:
+    """Return (port, is_open). Semaphore is passed in from the batch layer."""
+    async with sem:
+        try:
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port),
+                timeout=_PORT_TIMEOUT,
+            )
+            writer.close()
+            await writer.wait_closed()
+            return port, True
+        except (asyncio.TimeoutError, OSError, ConnectionRefusedError):
+            return port, False
 
 
 async def scan_host(
     host: str,
+    sem: asyncio.Semaphore,
     ports: dict[int, str] | None = None,
-    timeout: float = 3.0,
 ) -> PortResult:
-    """Scan a single host on all high-value ports."""
+    """Scan a single host on all high-value ports using a shared semaphore."""
     target_ports = ports or HIGH_VALUE_PORTS
     result = PortResult(host=host)
-    port_sem = asyncio.Semaphore(10)
 
-    async def _guarded(port: int) -> tuple[int, bool]:
-        async with port_sem:
-            return port, await _check_port(host, port, timeout)
-
-    tasks = [asyncio.create_task(_guarded(p)) for p in target_ports]
+    tasks = [asyncio.create_task(_check_port(host, p, sem)) for p in target_ports]
     for coro in asyncio.as_completed(tasks):
         port, is_open = await coro
         if is_open:
@@ -109,12 +108,17 @@ async def scan_batch(
     cfg: "Settings",
     ports: dict[int, str] | None = None,
 ) -> list[PortResult]:
-    """Scan multiple hosts concurrently with a semaphore."""
-    sem = asyncio.Semaphore(min(cfg.concurrency, 15))
+    """Scan multiple hosts concurrently.
 
-    async def _scan_one(host: str) -> PortResult:
-        async with sem:
-            return await scan_host(host, ports)
+    Uses a single global semaphore across all hosts and ports so the total
+    number of open TCP connections is bounded without double-counting.
+    Port count × host concurrency with separate per-host semaphores was
+    creating O(hosts × 10) simultaneous connections — unnecessarily high.
+    """
+    # One semaphore for all connections: hosts × ports_per_host but bounded.
+    # 300 parallel TCP attempts is comfortable for a VPS with good networking.
+    total_conn_limit = min(cfg.concurrency * 3, 500)
+    global_sem = asyncio.Semaphore(total_conn_limit)
 
     with Progress(
         SpinnerColumn(),
@@ -123,15 +127,15 @@ async def scan_batch(
         MofNCompleteColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task("scanning", total=len(hosts))
-        tasks = [_scan_one(h) for h in hosts]
+        task_bar = progress.add_task("scanning", total=len(hosts))
+        host_tasks = [asyncio.create_task(scan_host(h, global_sem, ports)) for h in hosts]
         results: list[PortResult] = []
-        for coro in asyncio.as_completed(tasks):
+        for coro in asyncio.as_completed(host_tasks):
             res = await coro
             results.append(res)
-            progress.advance(task)
+            progress.advance(task_bar)
 
-    # Only report hosts with interesting ports (exclude 443 since we know it)
+    # Only report hosts with interesting ports (exclude 80/443)
     interesting = [r for r in results if any(p not in (80, 443) for p in r.open_ports)]
     if interesting:
         console.print(f"[bold yellow]{len(interesting)}[/] hosts with extra open ports")

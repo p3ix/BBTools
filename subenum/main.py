@@ -462,7 +462,9 @@ async def _run_async(
                     valid_perms = {p for p in perm_candidates if _DOMAIN_RE.match(p)}
                     if valid_perms:
                         console.print(f"[dim]Resolving {len(valid_perms)} permutations...[/]")
-                        perm_results = await resolve_batch(sorted(valid_perms), cfg, wcard_map)
+                        perm_results = await resolve_batch(
+                            sorted(valid_perms), cfg, wcard_map, skip_aaaa=True
+                        )
                         perm_found = [r for r in perm_results if r.resolved]
                         if perm_found:
                             console.print(f"[bold green]+{len(perm_found)} new subdomains from permutations[/]")
@@ -643,8 +645,14 @@ async def _run_async(
 
 
 async def _run_nuclei(run_dir: Path, severity: str) -> None:
-    """Execute nuclei with real-time progress display."""
-    targets_file = run_dir / "nuclei_targets.txt"
+    """Execute nuclei with real-time progress display and optimised flags."""
+    import json as _json
+
+    # Prefer unique_targets.txt (soft-404/duplicates already filtered out)
+    unique_file = run_dir / "unique_targets.txt"
+    fallback_file = run_dir / "nuclei_targets.txt"
+    targets_file = unique_file if unique_file.is_file() and unique_file.stat().st_size > 0 else fallback_file
+
     if not targets_file.is_file() or targets_file.stat().st_size == 0:
         console.print("[yellow]--nuclei: no targets file found, skipping[/]")
         return
@@ -657,15 +665,62 @@ async def _run_nuclei(run_dir: Path, severity: str) -> None:
     target_count = sum(1 for ln in targets_file.read_text().splitlines() if ln.strip())
     output_file = run_dir / "nuclei_results.txt"
 
+    # Build tech-based tag filter from scan results to prioritise relevant templates
+    extra_tags: list[str] = []
+    subs_file = run_dir / "subdomains.json"
+    if subs_file.is_file():
+        try:
+            data = _json.loads(subs_file.read_text())
+            tech_names: set[str] = set()
+            for entry in data:
+                for t in entry.get("technologies", []):
+                    tech_names.add(t.get("name", "").lower().replace(" ", "-"))
+                for hv in entry.get("high_value_techs", []):
+                    tech_names.add(hv.lower().replace(" ", "-"))
+            # Map detected techs to nuclei tag names
+            _TECH_TAG_MAP = {
+                "jenkins": "jenkins", "grafana": "grafana", "kibana": "kibana",
+                "jira": "jira", "confluence": "confluence", "wordpress": "wordpress",
+                "drupal": "drupal", "laravel": "laravel", "spring": "spring",
+                "elasticsearch": "elasticsearch", "redis": "redis", "mongodb": "mongodb",
+                "phpmyadmin": "phpmyadmin", "gitlab": "gitlab", "github": "github",
+                "sonarqube": "sonarqube", "prometheus": "prometheus",
+                "apache": "apache", "nginx": "nginx", "iis": "iis",
+                "django": "django", "rails": "rails", "flask": "flask",
+                "kubernetes": "kubernetes", "docker": "docker",
+                "tomcat": "tomcat", "struts": "struts",
+            }
+            for tech in tech_names:
+                for key, tag in _TECH_TAG_MAP.items():
+                    if key in tech:
+                        extra_tags.append(tag)
+            extra_tags = sorted(set(extra_tags))
+        except Exception:
+            pass
+
     cmd = [
         nuclei_bin,
         "-l", str(targets_file),
         "-severity", severity,
         "-o", str(output_file),
         "-stats", "-stats-interval", "5",
+        # Performance flags
+        "-rl", "150",                               # rate limit: 150 req/sec
+        "-c", "30",                                 # 30 concurrent template executions
+        "-timeout", "5",                            # 5s per request (default is 5 anyway)
+        "-retries", "1",                            # 1 retry (default 1)
+        "-mhe", "10",                               # skip host after 10 consecutive errors
+        # Skip template categories that are extremely slow or dangerous
+        "-exclude-tags", "dos,headless,fuzz,fuzzing",
     ]
+    if extra_tags:
+        # Prioritise templates for detected technologies — run them first
+        cmd += ["-tags", ",".join(extra_tags)]
+
+    tag_note = f" | tech tags: {', '.join(extra_tags)}" if extra_tags else ""
     console.print(
-        f"\n[bold magenta]Running nuclei[/] — {target_count} targets | severity: {severity}"
+        f"\n[bold magenta]Running nuclei[/] — {target_count} targets "
+        f"({targets_file.name}) | severity: {severity}{tag_note}"
     )
 
     findings: list[str] = []

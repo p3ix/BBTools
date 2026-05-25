@@ -37,12 +37,9 @@ def _random_label(length: int = 16) -> str:
 
 
 async def detect_wildcard(
-    domain: str, resolvers: list[str], timeout: int = 5
+    domain: str, resolvers: list[str], timeout: int = 4
 ) -> set[str]:
-    """Probe a random subdomain to detect wildcard DNS.
-
-    Returns the set of A-record IPs if wildcard is detected, empty set otherwise.
-    """
+    """Probe a random subdomain to detect wildcard DNS."""
     probe = f"_subenum-wdtest-{_random_label()}.{domain}"
     resolver = _make_resolver(resolvers, timeout)
     try:
@@ -59,65 +56,66 @@ async def detect_wildcard(
 
 
 # ---------------------------------------------------------------------------
-# Single resolution
+# Resolver factory
 # ---------------------------------------------------------------------------
 
-def _make_resolver(
-    resolvers: list[str], timeout: int
-) -> dns.asyncresolver.Resolver:
+def _make_resolver(resolvers: list[str], timeout: int) -> dns.asyncresolver.Resolver:
     r = dns.asyncresolver.Resolver()
     r.nameservers = resolvers
     r.lifetime = timeout
     return r
 
 
+# ---------------------------------------------------------------------------
+# Single resolution — A + CNAME + AAAA run in parallel
+# ---------------------------------------------------------------------------
+
 async def resolve_subdomain(
     sub: str,
     resolvers: list[str],
-    timeout: int = 5,
+    timeout: int = 4,
     retries: int = 2,
+    *,
+    skip_aaaa: bool = False,
+    _resolver: dns.asyncresolver.Resolver | None = None,
 ) -> ResolveResult:
+    """Resolve A, CNAME (and optionally AAAA) records in parallel.
+
+    Pass ``_resolver`` to reuse a pre-built resolver across many calls
+    (avoids creating a new object per subdomain in batch contexts).
+    Set ``skip_aaaa=True`` for brute-force/permutation passes where
+    AAAA records are rarely useful and the query just adds latency.
+    """
     result = ResolveResult(subdomain=sub)
-    resolver = _make_resolver(resolvers, timeout)
+    r = _resolver or _make_resolver(resolvers, timeout)
 
-    for attempt in range(1, retries + 1):
-        try:
-            # A records
+    async def _query(qtype: str) -> list[str]:
+        for attempt in range(retries):
             try:
-                ans_a = await resolver.resolve(sub, "A")
-                result.a_records = sorted({rr.to_text() for rr in ans_a})
+                ans = await r.resolve(sub, qtype)
+                return sorted({rr.to_text() for rr in ans})
             except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN,
-                    dns.resolver.NoNameservers, dns.resolver.LifetimeTimeout):
-                pass
+                    dns.resolver.NoNameservers):
+                return []
+            except dns.resolver.LifetimeTimeout:
+                if attempt < retries - 1:
+                    await asyncio.sleep(0.1)
+            except Exception:
+                return []
+        return []
 
-            # AAAA records
-            try:
-                ans_aaaa = await resolver.resolve(sub, "AAAA")
-                result.aaaa_records = sorted({rr.to_text() for rr in ans_aaaa})
-            except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN,
-                    dns.resolver.NoNameservers, dns.resolver.LifetimeTimeout):
-                pass
+    if skip_aaaa:
+        a_records, cname_records = await asyncio.gather(_query("A"), _query("CNAME"))
+        aaaa_records: list[str] = []
+    else:
+        a_records, cname_records, aaaa_records = await asyncio.gather(
+            _query("A"), _query("CNAME"), _query("AAAA")
+        )
 
-            # CNAME records
-            try:
-                ans_cname = await resolver.resolve(sub, "CNAME")
-                result.cname_records = sorted({rr.to_text() for rr in ans_cname})
-            except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN,
-                    dns.resolver.NoNameservers, dns.resolver.LifetimeTimeout):
-                pass
-
-            result.resolved = bool(
-                result.a_records or result.aaaa_records or result.cname_records
-            )
-            return result
-
-        except dns.resolver.LifetimeTimeout:
-            if attempt == retries:
-                return result
-            await asyncio.sleep(0.5)
-        except Exception:
-            return result
-
+    result.a_records = a_records
+    result.cname_records = cname_records
+    result.aaaa_records = aaaa_records
+    result.resolved = bool(a_records or aaaa_records or cname_records)
     return result
 
 
@@ -129,17 +127,27 @@ async def resolve_batch(
     subdomains: list[str],
     cfg: "Settings",
     wildcard_ips: dict[str, set[str]] | None = None,
+    skip_aaaa: bool = False,
 ) -> list[ResolveResult]:
-    """Resolve a list of subdomains concurrently with a semaphore."""
+    """Resolve a list of subdomains concurrently.
 
+    A single resolver is shared across all coroutines to avoid creating
+    thousands of resolver objects for large brute-force/permutation batches.
+    ``skip_aaaa=True`` cuts query count per subdomain from 3→2 for batch
+    passes where AAAA data isn't needed.
+    """
     sem = asyncio.Semaphore(cfg.concurrency)
     results: list[ResolveResult] = []
     wcard = wildcard_ips or {}
 
+    # One shared resolver for the whole batch
+    shared_resolver = _make_resolver(cfg.dns_resolvers, cfg.dns_timeout)
+
     async def _resolve_one(sub: str) -> ResolveResult:
         async with sem:
             return await resolve_subdomain(
-                sub, cfg.dns_resolvers, cfg.dns_timeout, cfg.dns_retries
+                sub, cfg.dns_resolvers, cfg.dns_timeout, cfg.dns_retries,
+                skip_aaaa=skip_aaaa, _resolver=shared_resolver,
             )
 
     with Progress(
@@ -150,9 +158,9 @@ async def resolve_batch(
         console=console,
     ) as progress:
         task = progress.add_task("resolving", total=len(subdomains))
-        tasks = [_resolve_one(s) for s in subdomains]
+        coros = [_resolve_one(s) for s in subdomains]
 
-        for coro in asyncio.as_completed(tasks):
+        for coro in asyncio.as_completed(coros):
             res = await coro
             # Filter out wildcard-only results
             root = _root_of(res.subdomain, wcard)
@@ -170,7 +178,6 @@ async def resolve_batch(
 
 
 def _root_of(subdomain: str, wcard: dict[str, set[str]]) -> str | None:
-    """Find which root domain this subdomain belongs to."""
     for root in wcard:
         if subdomain == root or subdomain.endswith(f".{root}"):
             return root

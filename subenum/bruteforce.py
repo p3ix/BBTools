@@ -58,19 +58,25 @@ async def bruteforce_domain(
         return []
 
     sem = asyncio.Semaphore(cfg.concurrency)
+    # One shared resolver for the whole brute-force batch.
+    # skip_aaaa: AAAA records are rarely relevant in brute-force and each
+    # query adds a full round-trip; CNAME is kept for takeover detection.
+    from subenum.dns_utils import _make_resolver
+    shared_resolver = _make_resolver(cfg.dns_resolvers, cfg.dns_timeout)
     found: list[ResolveResult] = []
 
     async def _resolve(sub: str) -> ResolveResult | None:
         async with sem:
             r = await resolve_subdomain(
-                sub, cfg.dns_resolvers, cfg.dns_timeout, cfg.dns_retries
+                sub, cfg.dns_resolvers, cfg.dns_timeout, cfg.dns_retries,
+                skip_aaaa=True, _resolver=shared_resolver,
             )
         if not r.resolved:
             return None
         # Drop pure wildcard matches
         if wildcard_ips:
             real_a = [ip for ip in r.a_records if ip not in wildcard_ips]
-            if not real_a and not r.aaaa_records and not r.cname_records:
+            if not real_a and not r.cname_records:
                 return None
         return r
 
