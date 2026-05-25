@@ -31,7 +31,11 @@ Designed to run unattended on a VPS with full resume support after connection dr
 - **Permutation/mutation engine** (`--permutate`) — generates label combinations
   from discovered subdomains. Accepts an external wordlist (`--wordlist`) to
   expand coverage; caps at 2 000 words to avoid combinatorial explosion (full
-  wordlist is used for flat brute-force).
+  wordlist is used for flat brute-force). Additionally applies targeted mutations
+  to each discovered label automatically:
+  - **Version patterns** — `api-v2` → `api-v1 … api-v6`, `v3-service` → `v1-service … v6-service`
+  - **Trailing-number variants** — `dev1` → `dev`, `dev2`, `dev3`, `dev01`, `dev02`
+  - **Numeric suffixes** — `api` → `api1`, `api-1`, `api01`, `api2`, `api-2`, `api02`
 - **Recursive enumeration** (`--recursive`) — automatically re-enumerates
   discovered sub-zones (e.g. `*.internal.example.com`) for deeper coverage.
 - DNS validation (A / AAAA / CNAME) with configurable resolvers and wildcard
@@ -95,6 +99,13 @@ Designed to run unattended on a VPS with full resume support after connection dr
 - **Next Steps summary** — after each scan shows the top 10 targets to
   investigate first, prioritised by takeover risk, high-value tech without WAF,
   interesting subdomains with open ports and direct origins.
+- **Wordlist management** (`wordlist` subcommand) — three utilities for building
+  and maintaining wordlists:
+  - `stats` — word count, per-category breakdown table, duplicate detection
+  - `merge` — combine any number of wordlists, deduplicate, sort, write output
+  - `generate` — extract labels from a previous scan's `subdomains.json`, apply
+    version/number mutations, and optionally merge with a base wordlist to build
+    a target-specific list for the next run
 
 ---
 
@@ -247,6 +258,27 @@ screen -r scan   # reattach later
 python -m subenum.main diff output/20260325_132129 output/20260326_091500
 ```
 
+### Wordlist utilities
+
+```bash
+# Inspect a wordlist: word count, category breakdown, duplicate check
+python -m subenum.main wordlist stats wordlists/bb_personal.txt
+
+# Merge multiple wordlists, deduplicate and sort
+python -m subenum.main wordlist merge wordlists/bb_personal.txt wordlists/combined.txt \
+  -o wordlists/my_merged.txt
+
+# Generate a target-specific wordlist from a previous scan
+# (extracts labels + version/number mutations from all discovered subdomains)
+python -m subenum.main wordlist generate output/20260514_103045 \
+  -o wordlists/target_example_com.txt \
+  --base wordlists/combined.txt
+
+# Then feed it back into the next run for higher hit-rate brute-force
+python -m subenum.main run -i domains.txt \
+  --bruteforce --wordlist wordlists/target_example_com.txt --permutate
+```
+
 ### Check tool and key availability
 
 ```bash
@@ -379,26 +411,43 @@ the host is live without WAF protection):
 | `--resume` | Resume from an existing output directory |
 | `--diff` | Compare against a previous output directory |
 
+### wordlist subcommand
+
+```
+python -m subenum.main wordlist <command> [args]
+```
+
+| Command | Arguments | Description |
+|---|---|---|
+| `stats` | `<file>` | Word count, category table, duplicate check |
+| `merge` | `<files…> -o <out>` | Merge wordlists, deduplicate, sort |
+| `generate` | `<scan_dir> -o <out>` | Build target-specific list from previous scan |
+
+`generate` options: `--base <wordlist>` seed with a base list; `--max <n>` cap output size (default 5000).
+
 ---
 
 ## Wordlists
 
-`wordlists/bb_personal.txt` — curated personal wordlist (~750 words) organized
-in 17 sections: Dev/Staging/QA, API & gateway, Auth & identity, Admin panels,
+`wordlists/bb_personal.txt` — curated personal wordlist (**943 words**) organized
+in **19 sections**: Dev/Staging/QA, API & gateway, Auth & identity, Admin panels,
 CI/CD & DevOps, Monitoring, Data & databases, Storage, Internal tools, Mail,
 Security infrastructure, Cloud & containers, Payment, Mobile, Network services,
-Regional instances, and Legacy & forgotten assets.
+Regional instances, Legacy & forgotten assets, **AI/ML & Data Science**, and
+**Feature flags & experimentation**.
 
 `wordlists/combined.txt` — `bb_personal.txt` merged with
 [SecLists subdomains-top1million-5000](https://github.com/danielmiessler/SecLists/blob/master/Discovery/DNS/subdomains-top1million-5000.txt),
-deduplicated. Recommended default for `--wordlist`.
+deduplicated (**5 524 unique words**). Recommended default for `--wordlist`.
 
 For deeper coverage, combine with:
 - [Assetnote best-dns-wordlist](https://wordlists.assetnote.io) — internet-wide scan data
 - [n0kovo_subdomains_medium](https://github.com/n0kovo/n0kovo_subdomains) — ~100k curated entries
 
 ```bash
-sort -u wordlists/bb_personal.txt seclists_5000.txt n0kovo_medium.txt > wordlists/deep.txt
+python -m subenum.main wordlist merge \
+  wordlists/combined.txt n0kovo_medium.txt assetnote.txt \
+  -o wordlists/deep.txt
 ```
 
 ---
@@ -440,7 +489,7 @@ subenum/
   headers_audit.py   Security headers audit (HSTS, CSP, CORS, cookies, etc.)
   ports.py           Async port scanning (35+ ports)
   takeover.py        CNAME takeover detection
-  permutations.py    Subdomain permutation generation
+  permutations.py    Subdomain permutation + version/number mutation generation
   bruteforce.py      DNS brute-force with custom wordlists
   checkpoint.py      Resume / checkpoint persistence
   js_extract.py      JavaScript endpoint, secret and subdomain extraction
@@ -449,8 +498,8 @@ subenum/
   exporters.py       File export (txt/jsonl/json/stats/diff/dedup)
 
 wordlists/
-  bb_personal.txt    Curated personal wordlist (~750 words, 17 sections)
-  combined.txt       bb_personal + SecLists top-5000, deduplicated
+  bb_personal.txt    Curated personal wordlist (943 words, 19 sections)
+  combined.txt       bb_personal + SecLists top-5000, deduplicated (5 524 words)
 ```
 
 ---
