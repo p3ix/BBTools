@@ -1,43 +1,10 @@
-
-#
-#   1.  Dev / Staging / QA environments
-#   10. Mail & messaging
-#   11. Security infrastructure
-#   12. Cloud & container infra
-#   13. Payment & commerce
-#   14. Mobile & apps
-#   15. Network services
-#   16. Regional / numbered instances
-#   17. Legacy & forgotten assets
-#   2.  API & gateway
-#   3.  Auth & identity
-#   4.  Admin & management panels
-#   5.  CI/CD & DevOps tooling
-#   6.  Monitoring & observability
-#   7.  Data & databases
-#   8.  Storage & media
-#   9.  Internal tools & intranet
-# --- 1. Dev / Staging / QA ------------------------------------------
-# --- 10. Mail & messaging -----------------------------------------
-# --- 11. Security infrastructure ----------------------------------
-# --- 12. Cloud & container infra ----------------------------------
-# --- 13. Payment & commerce ---------------------------------------
-# --- 14. Mobile & apps -------------------------------------------
-# --- 15. Network services ----------------------------------------
-# --- 16. Regional / numbered instances ---------------------------
-# --- 17. Legacy & forgotten assets (high BB value) ---------------
-# --- 2. API & gateway -----------------------------------------------
-# --- 3. Auth & identity ---------------------------------------------
-# --- 4. Admin & management panels ----------------------------------
-# --- 5. CI/CD & DevOps tooling ------------------------------------
-# --- 6. Monitoring & observability --------------------------------
-# --- 7. Data & databases ------------------------------------------
-# --- 8. Storage & media -------------------------------------------
-# --- 9. Internal tools & intranet ---------------------------------
-# ============================================================
-# Bug Bounty Personal Subdomain Wordlist
-# Categories:
-# Optimized for: --bruteforce and --permutate
+# =============================================================================
+# subenum combined wordlist
+# =============================================================================
+# Merged from: wordlists/bb_personal.txt + SecLists subdomains-top1million-5000
+# Deduplicated and sorted alphabetically.
+# Total words: 5524
+# =============================================================================
 0
 00
 000
@@ -102,6 +69,7 @@
 2021
 2022
 2023
+2024
 21
 210
 22
@@ -169,6 +137,7 @@ aaaa
 aaaaa
 aai
 ab
+ab-test
 abacus
 abc
 abcd
@@ -177,6 +146,7 @@ abe
 abi
 about
 abs
+abtest
 abuse
 ac
 ac2
@@ -200,12 +170,14 @@ ace
 acesso
 acm
 acme
+acr
 acreditacion
 acs
 acs1
 acs2
 act
 action
+actions
 activate
 active
 activesync
@@ -223,8 +195,10 @@ adel
 adfs
 adm
 admin
+admin-api
 admin-backend
 admin-panel
+admin-portal
 admin1
 admin2
 admin3
@@ -269,6 +243,8 @@ agro
 ah
 ahcdn
 ai
+ai-api
+ai-gateway
 aia
 aic
 aim
@@ -333,9 +309,11 @@ amazon
 amber
 amc
 amd
+amer
 ami
 amos
 amp
+amplitude
 ams
 amt
 an
@@ -360,6 +338,7 @@ ansible
 ant
 antares
 anthony
+anthropic-proxy
 antigo
 antispam
 antispam2
@@ -369,9 +348,14 @@ any
 aod
 ap
 ap-northeast
+ap-northeast-1
+ap-south-1
 ap-southeast
+ap-southeast-1
+ap-southeast-2
 ap1
 ap2
+apac
 apache
 apc
 apc2
@@ -379,6 +363,7 @@ ape
 apex
 api
 api-dev
+api-docs
 api-gateway
 api-internal
 api-mobile
@@ -387,6 +372,8 @@ api-test
 api-v1
 api-v2
 api-v3
+api-v4
+api-v5
 api.demo
 api.dev
 api1
@@ -404,6 +391,7 @@ apitest
 apiv1
 apiv2
 apiv3
+apiv4
 apk
 apm
 apns
@@ -426,6 +414,7 @@ application
 apply
 apps
 apps2
+appsec
 appstore
 apptest
 april
@@ -597,6 +586,7 @@ ayuda
 az
 azure
 azure-ad
+azure-ad-b2c
 b
 b.ns
 b1
@@ -681,6 +671,7 @@ beauty
 bebe
 bec
 becas
+bedrock
 bee
 beehive
 beer
@@ -690,6 +681,7 @@ bell
 bella
 ben
 bender
+bentoml
 berlin
 bert
 bes
@@ -751,6 +743,7 @@ blackhole
 blacklist
 blank
 blob
+blobs
 block
 blocked
 blog
@@ -758,6 +751,7 @@ blogs
 bloqueio
 blr
 blue
+blue-team
 blueberry
 bluesky
 bm
@@ -819,11 +813,13 @@ btc
 btest
 bts
 bu
+buckets
 budget
 buffalo
 bug
 bug-bounty
 bugcrowd
+bugfix
 bugs
 bugsnag
 bugzilla
@@ -973,6 +969,7 @@ centreon
 centrum
 ceo
 cep
+ceph
 cerberus
 ceres
 cert
@@ -1098,6 +1095,7 @@ codebuild
 codepipeline
 coe
 coffee
+cognito
 cognos
 cohen
 colin
@@ -1180,10 +1178,12 @@ core
 cornerstone
 corona
 coronavirus
+coroot
 corp
 corporate
 correio
 correo
+cortex
 cos
 cosmos
 counseling
@@ -1214,10 +1214,13 @@ cps
 cpv
 cr
 craft
+crash
+crashes
 crc
 creative
 credential
 credentials
+credits
 cri
 cricket
 cris
@@ -1290,6 +1293,7 @@ daniel
 daotao
 dap
 dark
+dark-launch
 darkness
 das
 dash
@@ -1297,6 +1301,7 @@ dashboard
 dashboards
 data
 data-lake
+data-science
 data-warehouse
 database
 database-admin
@@ -1307,6 +1312,7 @@ datadog
 dataflow
 datahub
 datalake
+datascience
 date
 dating
 datos
@@ -1341,7 +1347,10 @@ deb
 debian
 debug
 dec
+decom
+decommissioned
 dee
+deeplink
 def
 default
 degreeworks
@@ -1430,6 +1439,7 @@ dis
 disabled
 disaster-recovery
 disco
+discount
 discourse
 discover
 discovery
@@ -1473,6 +1483,7 @@ docker-hub
 docker-registry
 docker2
 docs
+docs-api
 doctor
 doctorat
 document
@@ -1583,6 +1594,7 @@ ecom
 ecommerce
 econ
 economia
+ecr
 ecs
 ed
 edelweiss
@@ -1652,7 +1664,10 @@ email
 email.mg
 emailmkt
 emails
+embedding
+embeddings
 emby
+emea
 emerald
 emergency
 emi
@@ -1743,6 +1758,8 @@ etl
 eu
 eu-central
 eu-central-1
+eu-north-1
+eu-south-1
 eu-west
 eu-west-1
 eu1
@@ -1776,7 +1793,10 @@ excellent
 exchange
 exp
 expe
+experiment
 experimental
+experimentation
+experiments
 expert
 explore
 expo
@@ -1822,7 +1842,10 @@ fcm
 fcs
 fd
 fe
+feast
 feature
+feature-flags
+featureflags
 fed
 feed
 feedback
@@ -1854,6 +1877,7 @@ find
 fine
 finger
 fire
+firebase-auth
 firefly
 firehose
 firewall
@@ -1867,12 +1891,15 @@ fisica
 fit
 fitness
 fl
+flags
+flagsmith
 flash
 flashman
 flat
 fleet
 flex
 flink
+flipt
 flora
 florian
 flow
@@ -1893,6 +1920,7 @@ forest
 forestdnszones
 forever
 forge
+forgejo
 forgerock
 form
 formation
@@ -1915,6 +1943,7 @@ fr
 france
 frank
 franklin
+fraud
 frc
 fred
 free
@@ -1950,6 +1979,7 @@ ftp4
 ftps
 ftth
 fuck
+fullstory
 fun
 function-app
 functions
@@ -2000,8 +2030,10 @@ gc2
 gcc
 gcloud
 gcp
+gcr
 gd
 gdocs
+gdpr
 gdrive
 gea
 gec
@@ -2042,6 +2074,7 @@ gis
 git
 gitea
 github
+github-actions
 gitlab
 gitlab-ci
 give
@@ -2099,6 +2132,7 @@ grid
 group
 groups
 groupware
+growthbook
 grpc
 grr
 gru
@@ -2161,6 +2195,7 @@ he
 health
 healthcare
 healthcheck
+heap
 heart
 heaven
 heimdall
@@ -2179,6 +2214,7 @@ hermes
 hero
 hes
 hestia
+hf
 hg
 hh
 hhh
@@ -2234,6 +2270,9 @@ hot
 hotel
 hotels
 hotfix
+hotfix1
+hotfix2
+hotjar
 hotspot
 house
 housing
@@ -2256,6 +2295,7 @@ hu
 huawei
 hub
 hudson
+huggingface
 hugo
 hunter
 hw
@@ -2341,6 +2381,8 @@ indonesia
 industrial
 inet
 inf
+inference
+inference-api
 infinity
 influxdb
 info
@@ -2379,6 +2421,7 @@ internet
 interno
 intra
 intranet
+intranet-portal
 intranet2
 inv
 inventario
@@ -2603,9 +2646,11 @@ krill
 kronos
 ks
 ksc
+kserve
 kt
 kts
 kube
+kubeflow
 kubernetes
 kuma
 kvccdufy
@@ -2629,9 +2674,12 @@ lan
 land
 landing
 landscape
+langchain
 laptop
 lara
 las
+latam
+launchdarkly
 law
 lb
 lb1
@@ -2713,8 +2761,10 @@ livechat
 livestream
 livetv
 lk
+llamaindex
 lll
 llm
+llm-api
 lm
 lmc
 lms
@@ -2725,6 +2775,7 @@ ln
 lnk
 lo
 load-balancer
+loadbalancer
 loc
 local
 localhost
@@ -2981,6 +3032,8 @@ miku
 mila
 milan
 milano
+milvus
+mimir
 mimosa
 mina
 mine
@@ -3005,12 +3058,15 @@ miss
 mist
 mit
 mix
+mixpanel
 mj
 mjj
 mk
 mkt
 mktr
 ml
+mlflow
+mlops
 mls
 mm
 mmc
@@ -3033,6 +3089,9 @@ mobility
 mod
 moda
 model
+model-server
+models
+modelserver
 moderator
 modern
 moe
@@ -3191,6 +3250,7 @@ nelson
 nemesis
 nemo
 neo
+neo4j
 neon
 neptun
 neptune
@@ -3199,6 +3259,7 @@ nestor
 net
 netadmin
 netbox
+netdata
 netflow
 netmon
 netops
@@ -3206,6 +3267,7 @@ network
 neu
 neuro
 new
+new-ui
 new2
 newlife
 newmail
@@ -3251,6 +3313,7 @@ nms2
 nn
 nntp
 no
+no-reply
 no1
 noah
 noble
@@ -3265,9 +3328,12 @@ nomad
 noname
 nono
 nora
+noreply
 nostromo
 not-public
 note
+notebook
+notebooks
 notes
 notice
 noticias
@@ -3345,12 +3411,14 @@ oauth
 oauth2
 ob
 oberon
+objectstore
 obs
 observatorio
 observium
 oc
 occ
 ocean
+oci
 ocs
 ocsp
 octopus
@@ -3374,12 +3442,14 @@ ol
 old
 old-api
 old-app
+old-ui
 oldmail
 oldsite
 oldweb
 oldwebmail
 oldwww
 olive
+ollama
 olp
 olympic
 olympus
@@ -3410,6 +3480,8 @@ opac
 opal
 opasuite
 open
+openai-proxy
+openapi
 opendata
 openid
 opennms
@@ -3429,6 +3501,7 @@ ops-panel
 opsgenie
 opt
 optima
+optimizely
 ora
 oracle
 orange
@@ -3438,6 +3511,7 @@ order
 orders
 orientation
 origin
+original
 orion
 os
 oscar
@@ -3519,6 +3593,7 @@ pass
 passbolt
 passkey
 password
+passwordless
 paste
 pat
 patch
@@ -3579,6 +3654,7 @@ pgd
 pgm
 pgpool
 pgsql
+pgvector
 ph
 pharmacy
 phc
@@ -3607,6 +3683,7 @@ pilot
 pim
 pin
 pine
+pinecone
 ping
 pingdom
 pingfederate
@@ -3694,6 +3771,8 @@ postfix
 postfixadmin
 postgres
 postgresql
+posthog
+postmaster
 postoffice
 power
 pp
@@ -3740,13 +3819,20 @@ pro
 processoseletivo
 procurement
 prod
+prod01
+prod02
+prod1
+prod2
 production
+production1
+production2
 products
 profile
 profiles
 prograd
 program
 programs
+progressive-delivery
 project
 projects
 projetos
@@ -3825,6 +3911,7 @@ qa1
 qa2
 qat
 qc
+qdrant
 qmail
 qms
 qq
@@ -3876,6 +3963,7 @@ ras
 raspberry
 raven
 ray
+ray-cluster
 raygun
 rb
 rbc
@@ -3901,6 +3989,7 @@ recipes
 recruit
 recruitment
 red
+red-team
 redash
 redcap
 rede
@@ -3908,7 +3997,9 @@ redirect
 redis
 redis1
 redmine
+redoc
 refresh
+refund
 reg
 regis
 register
@@ -4009,6 +4100,8 @@ rocketchat
 rocky
 rogers
 rollbar
+rollout
+rollouts
 rom
 roma
 roman
@@ -4076,6 +4169,7 @@ s7
 s8
 s9
 sa
+sa-east-1
 saa
 sac
 sad
@@ -4086,6 +4180,7 @@ safety
 sag
 saga
 sage
+sagemaker
 sai
 sakura
 sal
@@ -4172,12 +4267,15 @@ sed
 see
 seed
 seg
+segment
 seguridad
 sei
+seldon
 self
 selfcare
 selfservice
 sem
+semaphore
 sen
 senat
 send
@@ -4229,6 +4327,7 @@ sf
 sfc
 sfs
 sftp
+sftp2
 sg
 sga
 sgc
@@ -4268,6 +4367,7 @@ sign
 signage
 signature
 signin
+signoz
 signup
 sigrh
 sil
@@ -4400,6 +4500,7 @@ spam
 spamtitan
 spanish
 spark
+spark-ui
 spb
 spc
 spd
@@ -4421,6 +4522,7 @@ spike
 spinnaker
 spiral
 spirit
+split-testing
 splunk
 splunk1
 spock
@@ -4429,6 +4531,7 @@ sports
 spot
 spp
 spring
+sprint
 sps
 sputnik
 sq
@@ -4559,6 +4662,7 @@ summit
 sun
 sunny
 sunrise
+sunset
 sunshine
 super
 superadmin
@@ -4579,6 +4683,7 @@ sv
 svc
 svn
 sw
+swagger
 swan
 sweet
 switch
@@ -4609,6 +4714,7 @@ tacacs
 tag
 tai
 taiga
+tailscale
 tak
 talent
 talk
@@ -4660,6 +4766,7 @@ ten
 tenant
 tender
 tennis
+tensorboard
 tera
 terminal
 terra
@@ -4695,6 +4802,7 @@ testdrive
 teste
 teste1
 tester
+testflight
 testing
 testmail
 tests
@@ -4714,6 +4822,7 @@ tftp
 tg
 th
 thanks
+thanos
 the
 theatre
 thomas
@@ -4737,6 +4846,7 @@ tim
 time
 time1
 time2
+timescaledb
 timesheet
 timmy
 tina
@@ -4762,6 +4872,8 @@ toast
 tock
 today
 todo
+toggle
+toggles
 token
 tokens
 tokyo
@@ -4773,6 +4885,7 @@ tools
 top
 topup
 tor
+torchserve
 torrent
 tos
 total
@@ -4798,6 +4911,7 @@ traffic
 train
 training
 tramites
+transactional
 transfer
 translate
 transparencia
@@ -4814,6 +4928,7 @@ trino
 triton
 trpc
 true
+trunk
 trust
 trusted
 try
@@ -4871,6 +4986,7 @@ universal
 universe
 unix
 unknown
+unleash
 unms
 unused
 up
@@ -4914,6 +5030,7 @@ v2
 v2-old
 v3
 v4
+v5
 v6
 va
 valentin
@@ -4931,12 +5048,15 @@ vcs
 vcsa
 vdi
 ve
+vector-db
+vectordb
 veeam
 vega
 velocidade
 vendas
 venus
 verify
+vertex
 vesta
 vestibular
 vet
@@ -4979,6 +5099,8 @@ visual
 vita
 vk
 vl
+vlan
+vllm
 vm
 vm1
 vm2
@@ -4999,6 +5121,7 @@ vol
 volunteer
 vortex
 vote
+voucher
 vox
 voyager
 vp
@@ -5036,6 +5159,7 @@ wa
 wac
 waf
 wall
+wallet
 wan
 wang
 wanguard
@@ -5055,6 +5179,7 @@ wc
 wd
 we
 weather
+weaviate
 web
 web-dev
 web01
@@ -5171,6 +5296,7 @@ wordpress
 work
 workday
 workflow
+workflows
 workload
 works
 workshop
@@ -5386,6 +5512,7 @@ zendesk4
 zero
 zero-trust
 zeromq
+zerotier
 zeta
 zeus
 zh

@@ -20,6 +20,8 @@
 #   15. Network services
 #   16. Regional / numbered instances
 #   17. Legacy & forgotten assets
+#   18. AI / ML & Data Science
+#   19. Feature flags & experimentation
 # ============================================================
 
 # --- 1. Dev / Staging / QA ------------------------------------------
@@ -45,6 +47,7 @@ uat01
 qa
 qa1
 qa01
+qa2
 qat
 testing
 test
@@ -85,7 +88,20 @@ exp
 review
 feature
 hotfix
+hotfix1
+hotfix2
+bugfix
 patch
+sprint
+prod
+prod1
+prod2
+prod01
+prod02
+production1
+production2
+main
+trunk
 
 # --- 2. API & gateway -----------------------------------------------
 api
@@ -96,13 +112,18 @@ api4
 api-v1
 api-v2
 api-v3
+api-v4
+api-v5
 apiv1
 apiv2
 apiv3
+apiv4
 v1
 v2
 v3
 v4
+v5
+v6
 rest
 restapi
 graphql
@@ -137,7 +158,6 @@ callback
 webhooks
 webhook
 integrations
-integration
 connector
 connectors
 platform
@@ -154,6 +174,11 @@ external
 external-api
 b2b
 b2c
+openapi
+swagger
+redoc
+api-docs
+docs-api
 
 # --- 3. Auth & identity ---------------------------------------------
 auth
@@ -206,6 +231,12 @@ mfa
 otp
 passkey
 webauthn
+cas
+radius
+azure-ad
+cognito
+firebase-auth
+passwordless
 
 # --- 4. Admin & management panels ----------------------------------
 admin
@@ -234,13 +265,15 @@ admin-backend
 superadmin
 superuser
 root
-staff
-employees
 operator
 ops-panel
 adminpanel
 admin-panel
+admin-portal
+admin-api
 cms
+sys
+system
 wp-admin
 wp-login
 phpmyadmin
@@ -316,6 +349,13 @@ salt
 saltstack
 runbook
 runbooks
+actions
+workflow
+workflows
+github-actions
+semaphore
+gitea
+forgejo
 
 # --- 6. Monitoring & observability --------------------------------
 monitor
@@ -329,8 +369,6 @@ tracing
 grafana
 kibana
 kibana1
-elastic
-elasticsearch
 splunk
 splunk1
 datadog
@@ -370,6 +408,13 @@ opsgenie
 pagerduty
 victorops
 alerting
+tempo
+mimir
+cortex
+thanos
+signoz
+netdata
+coroot
 
 # --- 7. Data & databases ------------------------------------------
 db
@@ -396,6 +441,7 @@ redis
 redis1
 memcached
 elastic
+elasticsearch
 cassandra
 kafka
 kafka1
@@ -437,6 +483,14 @@ event-bus
 stream
 streaming
 firehose
+neo4j
+influxdb
+timescaledb
+weaviate
+pinecone
+milvus
+qdrant
+pgvector
 
 # --- 8. Storage & media -------------------------------------------
 storage
@@ -465,7 +519,6 @@ video
 videos
 audio
 documents
-docs
 backup
 backup1
 backup2
@@ -477,12 +530,16 @@ archives
 dr
 disaster-recovery
 nfs
-ftp
 sftp
 webdav
 sharepoint
 onedrive
 gdrive
+minio
+ceph
+objectstore
+buckets
+blobs
 
 # --- 9. Internal tools & intranet ---------------------------------
 internal
@@ -494,7 +551,7 @@ priv
 corp
 corporate
 staff
-employee
+employees
 hr
 hrms
 hris
@@ -520,10 +577,11 @@ it-helpdesk
 itops
 extranet
 vpn-internal
-remote-access
 network
 net
 noc
+intranet-portal
+employee
 
 # --- 10. Mail & messaging -----------------------------------------
 mail
@@ -558,6 +616,12 @@ notifications
 push
 push-notifications
 alerts
+postmaster
+abuse
+noreply
+no-reply
+transactional
+bulk
 
 # --- 11. Security infrastructure ----------------------------------
 security
@@ -597,6 +661,11 @@ bugcrowd
 hackerone
 bug-bounty
 responsible-disclosure
+appsec
+red-team
+blue-team
+privacy
+gdpr
 
 # --- 12. Cloud & container infra ----------------------------------
 k8s
@@ -610,9 +679,7 @@ cluster1
 node
 nodes
 workload
-docker
 docker-hub
-registry
 containerd
 rancher
 openshift
@@ -646,8 +713,12 @@ dynamodb
 sqs
 sns
 ses-email
-azure-ad
+azure-ad-b2c
 tenant
+ecr
+gcr
+acr
+oci
 
 # --- 13. Payment & commerce ---------------------------------------
 pay
@@ -678,6 +749,14 @@ license
 licenses
 order
 orders
+refund
+fraud
+wallet
+credits
+voucher
+coupon
+discount
+tax
 
 # --- 14. Mobile & apps -------------------------------------------
 mobile
@@ -700,6 +779,13 @@ devices
 ota
 firmware
 sdk
+deeplink
+pwa
+apk
+ipa
+testflight
+crash
+crashes
 
 # --- 15. Network services ----------------------------------------
 ns
@@ -714,7 +800,7 @@ mx1
 mx2
 ntp
 ftp
-sftp
+sftp2
 ssh
 rdp
 vnc
@@ -731,6 +817,14 @@ gateway2
 router
 switch
 firewall1
+loadbalancer
+wireguard
+zerotier
+tailscale
+nat
+bgp
+vlan
+tunnel
 
 # --- 16. Regional / numbered instances ---------------------------
 us
@@ -767,6 +861,18 @@ us-west-1
 us-west-2
 eu-west-1
 eu-central-1
+eu-north-1
+eu-south-1
+ap-south-1
+ap-southeast-1
+ap-southeast-2
+ap-northeast-1
+sa-east-1
+apac
+latam
+emea
+amer
+global
 
 # --- 17. Legacy & forgotten assets (high BB value) ---------------
 old
@@ -778,27 +884,25 @@ deprecated
 v0
 v1-old
 v2-old
-archive
 archived
 retired
 eol
 uat-old
 staging-old
 test-old
-bak
 backup-old
 2019
 2020
 2021
 2022
 2023
+2024
 temp
 tmp
 trash
 unused
 disabled
 wip
-qa2
 stg3
 mirror
 shadow
@@ -813,3 +917,90 @@ sensitive
 internal-only
 not-public
 do-not-use
+classic
+original
+old-ui
+new-ui
+sunset
+decom
+decommissioned
+
+# --- 18. AI / ML & Data Science ----------------------------------
+ai
+ml
+llm
+llm-api
+ai-api
+ai-gateway
+model
+models
+model-server
+modelserver
+inference
+inference-api
+training
+train
+experiment
+experiments
+jupyter
+notebook
+notebooks
+mlflow
+mlops
+kubeflow
+tensorboard
+ray
+ray-cluster
+vertex
+sagemaker
+bedrock
+vectordb
+vector-db
+embeddings
+embedding
+huggingface
+hf
+ollama
+vllm
+triton
+torchserve
+bentoml
+kserve
+seldon
+feast
+data-science
+datascience
+spark-ui
+openai-proxy
+anthropic-proxy
+langchain
+llamaindex
+
+# --- 19. Feature flags & experimentation -------------------------
+flags
+feature-flags
+featureflags
+toggles
+toggle
+launchdarkly
+growthbook
+unleash
+flagsmith
+flipt
+optimizely
+posthog
+amplitude
+mixpanel
+segment
+heap
+hotjar
+fullstory
+rollout
+rollouts
+experimentation
+ab-test
+abtest
+dark-launch
+analytics
+split-testing
+progressive-delivery

@@ -781,6 +781,175 @@ def version() -> None:
 
 
 # ---------------------------------------------------------------------------
+# wordlist sub-app
+# ---------------------------------------------------------------------------
+
+wordlist_app = typer.Typer(
+    name="wordlist",
+    help="Wordlist management: stats, merge, and target-specific generation.",
+    add_completion=False,
+)
+app.add_typer(wordlist_app, name="wordlist")
+
+
+def _load_words_from_file(path: Path) -> list[str]:
+    """Read non-blank, non-comment words from a wordlist file."""
+    words = []
+    for line in path.read_text(errors="replace").splitlines():
+        w = line.strip().lower()
+        if w and not w.startswith("#"):
+            words.append(w)
+    return words
+
+
+@wordlist_app.command("stats")
+def wordlist_stats(
+    file: Path = typer.Argument(..., help="Path to wordlist file"),
+) -> None:
+    """Show word count, category breakdown, and duplicate analysis."""
+    if not file.is_file():
+        console.print(f"[red]File not found: {file}[/]")
+        raise typer.Exit(1)
+
+    lines = file.read_text(errors="replace").splitlines()
+    words: list[str] = []
+    categories: list[tuple[str, list[str]]] = []
+    current_category = "Uncategorized"
+    current_words: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("# ---"):
+            # Save previous category
+            if current_words:
+                categories.append((current_category, current_words[:]))
+                current_words = []
+            current_category = stripped.lstrip("# -").strip()
+        elif stripped and not stripped.startswith("#"):
+            w = stripped.lower()
+            words.append(w)
+            current_words.append(w)
+
+    if current_words:
+        categories.append((current_category, current_words[:]))
+
+    seen: dict[str, int] = {}
+    for w in words:
+        seen[w] = seen.get(w, 0) + 1
+    duplicates = {w: c for w, c in seen.items() if c > 1}
+
+    console.print(f"\n[bold]Wordlist stats:[/] {file.name}")
+    console.print(f"  Total lines : {len(lines)}")
+    console.print(f"  Words       : [bold cyan]{len(words)}[/]")
+    console.print(f"  Unique      : [bold green]{len(seen)}[/]")
+
+    if duplicates:
+        console.print(f"  [bold red]Duplicates  : {len(duplicates)}[/]")
+        for w, c in sorted(duplicates.items(), key=lambda x: -x[1])[:10]:
+            console.print(f"    [red]{w!r}[/] appears {c}×")
+    else:
+        console.print("  Duplicates  : [green]none[/]")
+
+    if categories:
+        table = Table(title="Categories", show_lines=False)
+        table.add_column("Category", style="bold")
+        table.add_column("Words", justify="right")
+        for cat, cat_words in categories:
+            table.add_row(cat, str(len(cat_words)))
+        console.print(table)
+
+
+@wordlist_app.command("merge")
+def wordlist_merge(
+    files: list[Path] = typer.Argument(..., help="Wordlist files to merge"),
+    output: Path = typer.Option(..., "-o", "--output", help="Output file path"),
+    no_sort: bool = typer.Option(False, "--no-sort", help="Skip alphabetical sort"),
+) -> None:
+    """Merge multiple wordlists, deduplicate, and write to output."""
+    merged: dict[str, None] = {}  # ordered set via insertion-order dict
+    for path in files:
+        if not path.is_file():
+            console.print(f"[yellow]Skipping missing file: {path}[/]")
+            continue
+        for word in _load_words_from_file(path):
+            merged[word] = None
+        console.print(f"[dim]Loaded {path.name}[/]")
+
+    result = list(merged.keys())
+    if not no_sort:
+        result.sort()
+
+    header = (
+        f"# Merged wordlist — {len(result)} unique words\n"
+        f"# Sources: {', '.join(f.name for f in files)}\n"
+    )
+    output.write_text(header + "\n".join(result) + "\n")
+    console.print(
+        f"[green]Merged {len(files)} file(s) → [bold]{len(result)}[/] unique words → {output}[/]"
+    )
+
+
+@wordlist_app.command("generate")
+def wordlist_generate(
+    scan_dir: Path = typer.Argument(..., help="Previous scan output directory"),
+    output: Path = typer.Option(..., "-o", "--output", help="Output wordlist file"),
+    base_wordlist: Optional[Path] = typer.Option(
+        None, "--base", help="Optional base wordlist to seed results with"
+    ),
+    max_words: int = typer.Option(5000, "--max", help="Maximum words to emit"),
+) -> None:
+    """Generate a target-specific wordlist from a previous scan's subdomains.json.
+
+    Extracts all subdomain labels, adds numeric/version mutations, then merges
+    with an optional base wordlist and deduplicates.
+    """
+    import json
+    from subenum.permutations import _number_variants, _version_variants
+
+    subs_file = scan_dir / "subdomains.json"
+    if not subs_file.is_file():
+        console.print(f"[red]subdomains.json not found in {scan_dir}[/]")
+        raise typer.Exit(1)
+
+    data = json.loads(subs_file.read_text())
+    subdomains: list[str] = [e["subdomain"] for e in data if isinstance(e, dict) and e.get("subdomain")]
+
+    # Extract first-level labels
+    labels: set[str] = set()
+    for sub in subdomains:
+        parts = sub.split(".")
+        if len(parts) >= 3:
+            labels.add(parts[0])
+
+    # Collect label + mutations
+    generated: set[str] = set(labels)
+    for label in labels:
+        for v in _version_variants(label):
+            generated.add(v)
+        for v in _number_variants(label):
+            generated.add(v)
+
+    # Merge with optional base wordlist
+    if base_wordlist and base_wordlist.is_file():
+        for w in _load_words_from_file(base_wordlist):
+            generated.add(w)
+
+    result = sorted(generated)[:max_words]
+
+    header = (
+        f"# Target-specific wordlist generated from {scan_dir.name}\n"
+        f"# Labels extracted: {len(labels)}, total words: {len(result)}\n"
+    )
+    output.write_text(header + "\n".join(result) + "\n")
+    console.print(
+        f"[green]Generated [bold]{len(result)}[/] words from {len(subdomains)} subdomains → {output}[/]"
+    )
+    if labels:
+        sample = sorted(labels)[:8]
+        console.print(f"[dim]Sample labels: {', '.join(sample)}[/]")
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 
