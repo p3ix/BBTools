@@ -176,7 +176,10 @@ def _print_summary(
     if source_counts:
         src_table = Table(title="Per-source counts", show_lines=True)
         src_table.add_column("Domain", style="bold")
-        all_src_names = sorted({s for d in source_counts.values() for s in d})
+        # Only show sources that returned at least one subdomain across all domains
+        all_src_names = sorted({
+            s for d in source_counts.values() for s, n in d.items() if n > 0
+        })
         for src in all_src_names:
             src_table.add_column(src, justify="right")
         for domain, counts in source_counts.items():
@@ -225,14 +228,24 @@ def _print_action_items(
             port_str = ", ".join(f"{p}/{s}" for p, s in sorted(extras.items()))
             items.append((80, sub, f"Interesting + ports: {port_str} (score:{hit.score})"))
 
-    # 4. Direct origins with interesting tech (no third-party, no WAF)
+    # 4. High-score interesting targets (≥7) not already listed
+    already_added = {i[1] for i in items}
+    for sub, hit in sorted(interesting_set.items(), key=lambda x: -x[1].score):
+        if sub in already_added or hit.score < 7:
+            continue
+        pr = probe_map.get(sub)
+        waf_note = f" [WAF]" if pr and pr.waf else ""
+        items.append((55 + hit.score, sub, f"score:{hit.score}{waf_note} — {hit.reason}"))
+
+    # 5. Direct origins with interesting tech (no third-party, no WAF)
+    already_added = {i[1] for i in items}
     for pr in all_probe_results:
         if not pr.live_urls or pr.waf:
             continue
         entry = entry_map.get(pr.subdomain, {})
         if entry.get("third_party"):
             continue
-        if pr.technologies and pr.subdomain not in {i[1] for i in items}:
+        if pr.technologies and pr.subdomain not in already_added:
             tech_names = [t["name"] for t in pr.technologies[:3]]
             items.append((50, pr.subdomain, f"Direct origin: {', '.join(tech_names)}"))
 

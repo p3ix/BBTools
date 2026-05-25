@@ -24,12 +24,24 @@ console = Console(stderr=True)
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _short_error(source: str, exc: Exception) -> str:
-    """Produce a concise one-line warning for source failures."""
+# Track (source, error_key) pairs already printed so recursive sub-zone runs
+# don't repeat the same error for every sub-zone enumerated.
+_printed_errors: set[str] = set()
+
+
+def _print_source_error(source: str, exc: Exception) -> None:
+    """Print a source error once per (source, error type) per session."""
     if isinstance(exc, httpx.HTTPStatusError):
-        return f"[yellow]\\[{source}] HTTP {exc.response.status_code}[/]"
-    msg = str(exc).split("\n")[0][:80]
-    return f"[yellow]\\[{source}] {msg}[/]"
+        key = f"{source}:{exc.response.status_code}"
+        msg = f"[yellow]\\[{source}] HTTP {exc.response.status_code}[/]"
+    else:
+        key = f"{source}:{type(exc).__name__}"
+        msg = f"[yellow]\\[{source}] {str(exc).split(chr(10))[0][:80]}[/]"
+
+    if key in _printed_errors:
+        return
+    _printed_errors.add(key)
+    console.print(msg)
 
 
 def _is_enabled(cfg: "Settings", name: str) -> bool:
@@ -88,7 +100,7 @@ async def fetch_crtsh(domain: str, cfg: "Settings") -> set[str]:
             resp.raise_for_status()
             entries = resp.json()
     except Exception as exc:
-        console.print(_short_error("crtsh", exc))
+        _print_source_error("crtsh", exc)
         return set()
 
     subs: set[str] = set()
@@ -129,7 +141,7 @@ async def fetch_virustotal(domain: str, cfg: "Settings") -> set[str]:
                 if not cursor or not body.get("data"):
                     break
     except Exception as exc:
-        console.print(_short_error("virustotal", exc))
+        _print_source_error("virustotal", exc)
     return subs
 
 
@@ -146,7 +158,7 @@ async def fetch_urlscan(domain: str, cfg: "Settings") -> set[str]:
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:
-        console.print(_short_error("urlscan", exc))
+        _print_source_error("urlscan", exc)
         return set()
 
     subs: set[str] = set()
@@ -185,7 +197,9 @@ async def fetch_alienvault(domain: str, cfg: "Settings") -> set[str]:
         async with httpx.AsyncClient(timeout=src.timeout, follow_redirects=True) as client:
             resp = await client.get(f"{base}/passive_dns")
             if resp.status_code == 429:
-                console.print(f"[yellow]\\[alienvault] rate limited for {domain}[/]")
+                _print_source_error("alienvault", httpx.HTTPStatusError(
+                    "rate limited", request=resp.request, response=resp
+                ))
                 return set()
             resp.raise_for_status()
             for record in resp.json().get("passive_dns", []):
@@ -200,7 +214,7 @@ async def fetch_alienvault(domain: str, cfg: "Settings") -> set[str]:
                     if hostname:
                         subs.add(hostname)
     except Exception as exc:
-        console.print(_short_error("alienvault", exc))
+        _print_source_error("alienvault", exc)
     return subs
 
 
@@ -214,7 +228,7 @@ async def fetch_hackertarget(domain: str, cfg: "Settings") -> set[str]:
             resp.raise_for_status()
             text = resp.text
     except Exception as exc:
-        console.print(_short_error("hackertarget", exc))
+        _print_source_error("hackertarget", exc)
         return set()
 
     if "error" in text.lower() or "API count exceeded" in text:
@@ -246,7 +260,7 @@ async def fetch_wayback(domain: str, cfg: "Settings") -> set[str]:
             resp.raise_for_status()
             rows = resp.json()
     except Exception as exc:
-        console.print(_short_error("wayback", exc))
+        _print_source_error("wayback", exc)
         return set()
 
     subs: set[str] = set()
@@ -271,7 +285,7 @@ async def fetch_rapiddns(domain: str, cfg: "Settings") -> set[str]:
             resp.raise_for_status()
             html = resp.text
     except Exception as exc:
-        console.print(_short_error("rapiddns", exc))
+        _print_source_error("rapiddns", exc)
         return set()
 
     pattern = re.compile(r"(?i)([a-z0-9][-a-z0-9]*\.)*" + re.escape(domain))
@@ -287,7 +301,7 @@ async def fetch_anubis(domain: str, cfg: "Settings") -> set[str]:
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:
-        console.print(_short_error("anubis", exc))
+        _print_source_error("anubis", exc)
         return set()
 
     if isinstance(data, list):
@@ -306,7 +320,7 @@ async def fetch_threatminer(domain: str, cfg: "Settings") -> set[str]:
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:
-        console.print(_short_error("threatminer", exc))
+        _print_source_error("threatminer", exc)
         return set()
 
     results = data.get("results", [])
@@ -326,7 +340,7 @@ async def fetch_bufferover(domain: str, cfg: "Settings") -> set[str]:
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:
-        console.print(_short_error("bufferover", exc))
+        _print_source_error("bufferover", exc)
         return set()
 
     subs: set[str] = set()
@@ -360,7 +374,7 @@ async def fetch_chaos(domain: str, cfg: "Settings") -> set[str]:
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:
-        console.print(_short_error("chaos", exc))
+        _print_source_error("chaos", exc)
         return set()
 
     # API returns {"subdomains": ["api", "www", ...], "domain": "example.com"}
@@ -399,7 +413,7 @@ async def fetch_github(domain: str, cfg: "Settings") -> set[str]:
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:
-        console.print(_short_error("github", exc))
+        _print_source_error("github", exc)
         return set()
 
     for item in data.get("items", []):
