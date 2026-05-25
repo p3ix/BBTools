@@ -4,7 +4,7 @@
 
 # subenum
 
-Active and passive subdomain enumeration CLI for Bug Bounty reconnaissance.
+Passive subdomain enumeration CLI with active analysis for Bug Bounty reconnaissance.
 
 `subenum` reads a list of root domains, queries **14 passive sources** in
 parallel, brute-forces DNS with custom wordlists, generates smart permutations,
