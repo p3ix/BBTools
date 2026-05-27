@@ -286,6 +286,7 @@ def run(
     js: bool = typer.Option(False, "--js", help="Extract endpoints, subdomains and secrets from JS assets"),
     nuclei: bool = typer.Option(False, "--nuclei", help="Run nuclei on nuclei_targets.txt after the scan"),
     nuclei_severity: str = typer.Option("medium,high,critical", "--nuclei-severity", help="Nuclei severity filter"),
+    nuclei_templates: Optional[Path] = typer.Option(None, "--nuclei-templates", help="Custom nuclei templates dir or file (default: nuclei built-in)"),
     shodan: bool = typer.Option(False, "--shodan", help="Enrich resolved IPs with Shodan data (requires SHODAN_API_KEY)"),
 ) -> None:
     """Enumerate subdomains for all domains in the input file."""
@@ -328,7 +329,8 @@ def run(
     if js:
         flags.append("js-extract")
     if nuclei:
-        flags.append(f"nuclei({nuclei_severity})")
+        tpl_note = f",tpl:{nuclei_templates}" if nuclei_templates else ""
+        flags.append(f"nuclei({nuclei_severity}{tpl_note})")
     if shodan:
         flags.append("shodan")
     if resume:
@@ -344,7 +346,7 @@ def run(
         skip_probe, permutate, recursive, scan_ports,
         str(diff) if diff else None,
         words, bruteforce, resume, js,
-        nuclei, nuclei_severity, shodan,
+        nuclei, nuclei_severity, nuclei_templates, shodan,
     ))
 
 
@@ -364,6 +366,7 @@ async def _run_async(
     do_js: bool,
     do_nuclei: bool = False,
     nuclei_severity: str = "medium,high,critical",
+    nuclei_templates: Optional[Path] = None,
     do_shodan: bool = False,
 ) -> None:
     t0 = time.time()
@@ -621,7 +624,7 @@ async def _run_async(
 
     # --- Nuclei auto-trigger ---
     if do_nuclei:
-        await _run_nuclei(run_dir, nuclei_severity)
+        await _run_nuclei(run_dir, nuclei_severity, nuclei_templates)
 
     # --- Diff info for notifications ---
     new_subs: list[str] | None = None
@@ -644,7 +647,7 @@ async def _run_async(
     )
 
 
-async def _run_nuclei(run_dir: Path, severity: str) -> None:
+async def _run_nuclei(run_dir: Path, severity: str, templates: Optional[Path] = None) -> None:
     """Execute nuclei with real-time progress display and optimised flags."""
     import json as _json
 
@@ -706,13 +709,16 @@ async def _run_nuclei(run_dir: Path, severity: str) -> None:
         "-stats", "-stats-interval", "5",
         # Performance flags
         "-rl", "150",                               # rate limit: 150 req/sec
-        "-c", "30",                                 # 30 concurrent template executions
+        "-c", "25",                                 # 25 concurrent template executions (must be <= mhe to avoid WRN)
         "-timeout", "5",                            # 5s per request (default is 5 anyway)
         "-retries", "1",                            # 1 retry (default 1)
-        "-mhe", "10",                               # skip host after 10 consecutive errors
+        "-mhe", "50",                               # skip host after 50 consecutive errors
         # Skip template categories that are extremely slow or dangerous
         "-exclude-tags", "dos,headless,fuzz,fuzzing",
     ]
+    if templates:
+        # Use custom templates dir or file instead of nuclei built-in
+        cmd += ["-t", str(templates)]
     if extra_tags:
         # Prioritise templates for detected technologies — run them first
         cmd += ["-tags", ",".join(extra_tags)]
